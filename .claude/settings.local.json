@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip install:*)",
+      "Bash(python -c \"from app.main import app; print\\(''Import OK''\\)\")",
+      "Bash(npm install:*)",
+      "Bash(npx tsc:*)",
+      "Bash(python -c \"from app.core.security import hash_password, verify_password; h=hash_password\\(''test''\\); print\\(''bcrypt OK:'', verify_password\\(''test'', h\\)\\)\")",
+      "Bash(python -c \":*)",
+      "Bash(python -c \"import app.main; print\\(''Import OK''\\)\")",
+      "Bash(cmd /c \"netsh advfirewall firewall show rule name=all | findstr /i 8000\")"
+    ]
+  }
+}
