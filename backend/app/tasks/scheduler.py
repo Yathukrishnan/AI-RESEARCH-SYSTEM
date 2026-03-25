@@ -59,10 +59,10 @@ async def _weekly_content_transition():
 def setup_scheduler():
     from app.tasks.paper_tasks import fetch_and_store_papers, rescore_all_papers, enrich_pending_papers
 
-    # Daily fetch at 8 AM UTC – new papers get display_week = current+1
+    # Daily fetch at 8 AM IST (2:30 AM UTC) – new papers get display_week = current+1
     scheduler.add_job(
         fetch_and_store_papers,
-        CronTrigger(hour=8, minute=0),
+        CronTrigger(hour=2, minute=30),
         id="daily_fetch",
         args=[1],
         replace_existing=True,
