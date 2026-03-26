@@ -124,10 +124,30 @@ async def rescore_all_papers():
     logger.info("Weekly rescore complete")
 
 
+def _paper_age_days(published_at_str) -> float:
+    """Return age in days from published_at string. Returns 30 if unknown."""
+    if not published_at_str:
+        return 30.0
+    try:
+        pub = datetime.fromisoformat(str(published_at_str).replace("Z", "+00:00"))
+        if pub.tzinfo is None:
+            pub = pub.replace(tzinfo=timezone.utc)
+        return max(0.0, (datetime.now(timezone.utc) - pub).total_seconds() / 86400)
+    except Exception:
+        return 30.0
+
+
 async def enrich_pending_papers(batch_size: int = 100):
+    # Old papers (>7 days) first — citation_count affects their score.
+    # New papers (≤7 days) last — they use keyword/recency/github, not citations yet.
     rows = await turso_db.fetchall(
-        "SELECT rowid as id, arxiv_id, title FROM papers WHERE is_enriched = 0 AND is_deleted = 0 "
-        "ORDER BY COALESCE(normalized_score, current_score, keyword_score, 0) DESC LIMIT ?",
+        "SELECT rowid as id, arxiv_id, title, COALESCE(published_at, published_date) as published_at "
+        "FROM papers WHERE is_enriched = 0 AND is_deleted = 0 "
+        "ORDER BY "
+        "  CASE WHEN date(COALESCE(published_at, published_date, '2020-01-01')) <= date('now', '-7 days') "
+        "       THEN 0 ELSE 1 END ASC, "
+        "  COALESCE(normalized_score, current_score, keyword_score, 0) DESC "
+        "LIMIT ?",
         [batch_size]
     )
     if not rows:
@@ -138,31 +158,50 @@ async def enrich_pending_papers(batch_size: int = 100):
     now = datetime.now(timezone.utc).isoformat()
     enriched_ids = []
 
-    logger.info(f"Enriching {len(rows)} papers (citations + GitHub)…")
+    old_count = sum(1 for p in rows if _paper_age_days(p.get("published_at")) > 7)
+    new_count = len(rows) - old_count
+    logger.info(f"Enriching {len(rows)} papers: {old_count} old (full: citations+GitHub), {new_count} new (GitHub only)…")
+
     for p in rows:
         try:
+            age = _paper_age_days(p.get("published_at"))
+            is_new = age <= 7  # New papers don't use citations in scoring yet
+
+            if is_new:
+                # GitHub only — citations won't affect score for new papers, skip Semantic Scholar
+                github_raw = await enricher.get_github_data(p["arxiv_id"], p["title"])
+                citation_count = 0
+                h_index = 0.0
+                github_url = github_raw.get("github_url") if isinstance(github_raw, dict) else None
+                github_stars = int(github_raw.get("github_stars") or 0) if isinstance(github_raw, dict) else 0
+                github_forks = int(github_raw.get("github_forks") or 0) if isinstance(github_raw, dict) else 0
+                # Mark is_enriched=0 still so SS enrichment runs once paper turns 7 days old
+                # Only store GitHub data now; full enrichment deferred
+                await turso_db.execute(
+                    "UPDATE papers SET github_url=?, github_stars=?, github_forks=?, "
+                    "last_enriched_at=? WHERE rowid=?",
+                    [github_url, github_stars, github_forks, now, p["id"]]
+                )
+                # Don't add to enriched_ids — keep is_enriched=0 so SS runs later
+                if github_stars > 0 or github_url:
+                    logger.debug(f"New paper {p['arxiv_id']}: stored GitHub stars={github_stars}, SS deferred")
+                continue
+
+            # Old paper: full enrichment (citations count towards score)
             data = await enricher.enrich_paper(p["arxiv_id"], p["title"])
             citation_count = int(data.get("citation_count") or 0)
             h_index = float(data.get("h_index_max") or 0.0)
             github_url = data.get("github_url")
             github_stars = int(data.get("github_stars") or 0)
             github_forks = int(data.get("github_forks") or 0)
-            # Only mark is_enriched=1 if we got real data OR confirmed the paper
-            # simply has no citations/repos (not a rate-limit failure).
-            # We distinguish by checking if the enrichment returned None for SS data
-            # (rate-limited papers will have been skipped by the caller raising).
-            got_real_data = citation_count > 0 or github_stars > 0 or github_url is not None
-            # Mark enriched regardless — but track whether we got data.
-            # If SS was fully unavailable (all zeros), still mark done so we don't hammer it.
-            # Papers can be reset via admin endpoint if needed.
+
             await turso_db.execute(
                 "UPDATE papers SET citation_count=?, h_index_max=?, github_url=?, "
                 "github_stars=?, github_forks=?, is_enriched=1, last_enriched_at=? WHERE rowid=?",
                 [citation_count, h_index, github_url, github_stars, github_forks, now, p["id"]]
             )
             enriched_ids.append(p["id"])
-            if got_real_data:
-                logger.debug(f"Enriched {p['arxiv_id']}: citations={citation_count}, stars={github_stars}")
+            logger.debug(f"Enriched {p['arxiv_id']}: citations={citation_count}, stars={github_stars}")
         except Exception as e:
             logger.error(f"Enrich {p['arxiv_id']}: {e}")
             # Do NOT mark is_enriched=1 on exception — let it retry next hour

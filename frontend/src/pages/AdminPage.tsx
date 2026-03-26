@@ -287,9 +287,16 @@ function EnrichmentCard() {
 
         {/* Status pills */}
         <div className="flex flex-wrap gap-2 pt-1">
-          <span className="text-xs px-2 py-1 bg-surface-2 border border-accent/10 rounded-lg text-muted">
-            <span className="text-white font-medium">{data.pending.toLocaleString()}</span> pending enrichment
-          </span>
+          {(data.pending_old ?? 0) > 0 && (
+            <span className="text-xs px-2 py-1 bg-surface-2 border border-accent/10 rounded-lg text-muted">
+              <span className="text-white font-medium">{(data.pending_old).toLocaleString()}</span> old papers — awaiting citation lookup
+            </span>
+          )}
+          {(data.pending_new ?? 0) > 0 && (
+            <span className="text-xs px-2 py-1 bg-surface-2 border border-blue-500/20 rounded-lg text-blue-300">
+              <span className="font-medium">{(data.pending_new).toLocaleString()}</span> new papers — citation enrichment deferred (citations not in score yet)
+            </span>
+          )}
           {data.failed_rate_limit > 0 && (
             <span className="text-xs px-2 py-1 bg-yellow-500/10 border border-yellow-500/20 rounded-lg text-yellow-400">
               <span className="font-medium">{data.failed_rate_limit}</span> rate-limited (429)

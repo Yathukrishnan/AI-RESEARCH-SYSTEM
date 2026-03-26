@@ -262,7 +262,18 @@ async def enrichment_status(db: TursoClient = Depends(get_db), _: dict = Depends
     """Detailed enrichment progress: citation and GitHub data coverage."""
     total = await db.count("papers", "is_deleted = 0 AND is_duplicate = 0")
     enriched = await db.count("papers", "is_enriched = 1 AND is_deleted = 0")
-    pending = await db.count("papers", "is_enriched = 0 AND is_deleted = 0")
+    # Old papers (>7 days) pending full enrichment — citations will affect their score
+    pending_old = await db.count(
+        "papers",
+        "is_enriched = 0 AND is_deleted = 0 AND "
+        "date(COALESCE(published_at, published_date, '2020-01-01')) <= date('now', '-7 days')"
+    )
+    # New papers (≤7 days) — citations don't affect score yet; deferred until they age
+    pending_new = await db.count(
+        "papers",
+        "is_enriched = 0 AND is_deleted = 0 AND "
+        "date(COALESCE(published_at, published_date, date('now'))) > date('now', '-7 days')"
+    )
     with_citations = await db.count("papers", "citation_count > 0 AND is_deleted = 0")
     with_github = await db.count("papers", "github_stars > 0 AND is_deleted = 0")
     failed = await db.count(
@@ -280,7 +291,9 @@ async def enrichment_status(db: TursoClient = Depends(get_db), _: dict = Depends
         "ORDER BY github_stars DESC LIMIT 5"
     )
     return {
-        "total": total, "enriched": enriched, "pending": pending,
+        "total": total, "enriched": enriched,
+        "pending_old": pending_old,   # needs SS citation lookup now
+        "pending_new": pending_new,   # deferred — citations not used in scoring yet
         "with_citations": with_citations, "with_github": with_github,
         "failed_rate_limit": failed,
         "enrichment_pct": round(enriched / total * 100, 1) if total else 0,
