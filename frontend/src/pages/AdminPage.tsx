@@ -1236,16 +1236,18 @@ function SchedulerStatus() {
   useEffect(() => { load() }, [])
 
   const JOB_LABELS: Record<string, { label: string; color: string }> = {
-    daily_fetch:              { label: 'Daily Fetch (8 AM UTC)',        color: 'text-cyan-400'   },
-    weekly_rescore:           { label: 'Weekly Rescore (Sun 2 AM UTC)', color: 'text-purple-400' },
-    weekly_content_transition:{ label: 'Content Transition (Mon 00:05)',color: 'text-orange-400' },
-    enrich_pending:           { label: 'Enrich Papers (every 2h)',      color: 'text-green-400'  },
+    daily_fetch:              { label: 'Daily Fetch (8:00 AM IST / 2:30 AM UTC)', color: 'text-cyan-400'   },
+    weekly_rescore:           { label: 'Weekly Rescore (Sun 2:00 AM UTC)',         color: 'text-purple-400' },
+    weekly_content_transition:{ label: 'Content Transition (Mon 00:05 UTC)',       color: 'text-orange-400' },
+    enrich_pending:           { label: 'Enrich Papers (every hour)',               color: 'text-green-400'  },
   }
 
   const formatNext = (iso: string | null) => {
     if (!iso) return 'N/A'
-    const d = new Date(iso)
-    return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+    return new Date(iso).toLocaleString('en-IN', {
+      timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short',
+      hour: '2-digit', minute: '2-digit', hour12: true,
+    }) + ' IST'
   }
 
   return (
