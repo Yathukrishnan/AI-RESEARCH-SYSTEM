@@ -191,12 +191,18 @@ async def update_config(update: ConfigUpdate, db: TursoClient = Depends(get_db),
 
 @router.get("/keywords")
 async def get_keywords(db: TursoClient = Depends(get_db), _: dict = Depends(require_admin)):
-    # GROUP BY lower(keyword) to hide any case-variant duplicates that slipped in
-    # before the UNIQUE constraint was enforced; MIN(id) keeps the oldest entry.
-    return await db.fetchall(
-        "SELECT MIN(id) as id, keyword, weight, category, is_active, created_at "
-        "FROM keywords GROUP BY lower(keyword) ORDER BY weight DESC, keyword ASC"
+    rows = await db.fetchall(
+        "SELECT id, keyword, weight, category, is_active FROM keywords ORDER BY weight DESC, keyword ASC"
     )
+    # Deduplicate in Python (handles tables created before UNIQUE constraint existed)
+    seen: set = set()
+    unique = []
+    for row in rows:
+        key = (row.get("keyword") or "").lower().strip()
+        if key and key not in seen:
+            seen.add(key)
+            unique.append(row)
+    return unique
 
 
 @router.post("/keywords")

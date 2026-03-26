@@ -183,6 +183,7 @@ ENSURE_COLUMNS = [
     ("keywords", "weight",             "REAL",    "1.0"),
     ("keywords", "category",           "TEXT",    "'general'"),
     ("keywords", "is_active",          "INTEGER", "1"),
+    ("keywords", "created_at",         "TEXT",    "NULL"),
     # papers columns that may be missing in existing Turso table
     ("papers", "published_at",         "TEXT",    "NULL"),
     ("papers", "categories",           "TEXT",    "NULL"),
@@ -217,13 +218,14 @@ async def init_db():
         if await db.table_exists(table):
             await db.add_column_if_missing(table, col, typ, default)
 
-    # 4. Deduplicate keywords — remove rows where a lower-case duplicate exists,
-    #    keeping the oldest entry (MIN id). Runs on every boot but is a no-op when clean.
+    # 4. Deduplicate keywords — keep only the lowest id per keyword (case-insensitive).
+    #    Uses a self-join so it works on all SQLite/libSQL versions without non-standard
+    #    GROUP BY behaviour. Runs on every boot but is a no-op when the table is clean.
     if await db.table_exists("keywords"):
         try:
             await db.execute(
                 "DELETE FROM keywords WHERE id NOT IN ("
-                "  SELECT MIN(id) FROM keywords GROUP BY lower(keyword)"
+                "  SELECT MIN(k2.id) FROM keywords k2 GROUP BY lower(k2.keyword)"
                 ")"
             )
         except Exception as e:
