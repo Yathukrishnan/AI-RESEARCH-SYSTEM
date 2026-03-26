@@ -87,12 +87,12 @@ def setup_scheduler():
         misfire_grace_time=3600,
     )
 
-    # Enrich unenriched papers every hour, 100 papers per run
+    # Enrich unenriched papers every hour, 500 papers per run (batch API — ~50 papers/4s)
     scheduler.add_job(
         enrich_pending_papers,
         CronTrigger(minute=0),
         id="enrich_pending",
-        args=[100],
+        args=[500],
         replace_existing=True,
         misfire_grace_time=600,
     )

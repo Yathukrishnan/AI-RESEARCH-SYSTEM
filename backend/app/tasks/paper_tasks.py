@@ -150,7 +150,9 @@ def _paper_age_days(published_at_str) -> float:
         return 30.0
 
 
-async def enrich_pending_papers(batch_size: int = 100):
+async def enrich_pending_papers(batch_size: int = 500):
+    from app.services.enrichment_service import SS_BATCH_SIZE, SS_CHUNK_DELAY
+
     # Old papers (>7 days) first — citation_count affects their score.
     # New papers (≤7 days) last — they use keyword/recency/github, not citations yet.
     rows = await turso_db.fetchall(
@@ -171,55 +173,77 @@ async def enrich_pending_papers(batch_size: int = 100):
     now = datetime.now(timezone.utc).isoformat()
     enriched_ids = []
 
-    old_count = sum(1 for p in rows if _paper_age_days(p.get("published_at")) > 7)
-    new_count = len(rows) - old_count
-    logger.info(f"Enriching {len(rows)} papers: {old_count} old (full: citations+GitHub), {new_count} new (GitHub only)…")
+    # Split into old (>7 days) and new (≤7 days)
+    old_papers = [p for p in rows if _paper_age_days(p.get("published_at")) > 7]
+    new_papers = [p for p in rows if _paper_age_days(p.get("published_at")) <= 7]
+    logger.info(
+        f"Enriching {len(rows)} papers: {len(old_papers)} old (citations+GitHub), "
+        f"{len(new_papers)} new (GitHub only)…"
+    )
 
-    for p in rows:
-        try:
-            age = _paper_age_days(p.get("published_at"))
-            is_new = age <= 7  # New papers don't use citations in scoring yet
+    # ── Old papers: full enrichment in SS_BATCH_SIZE chunks ─────────────────
+    # Each chunk: 1 SS paper batch call + 1 SS author batch call + N concurrent PwC calls
+    # SS + PwC run in parallel (asyncio.gather), then SS_CHUNK_DELAY between chunks
+    for chunk_start in range(0, len(old_papers), SS_BATCH_SIZE):
+        chunk = old_papers[chunk_start:chunk_start + SS_BATCH_SIZE]
+        chunk_arxiv_ids = [p["arxiv_id"] for p in chunk]
 
-            if is_new:
-                # GitHub only — citations won't affect score for new papers, skip Semantic Scholar
-                github_raw = await enricher.get_github_data(p["arxiv_id"], p["title"])
-                citation_count = 0
-                h_index = 0.0
-                github_url = github_raw.get("github_url") if isinstance(github_raw, dict) else None
-                github_stars = int(github_raw.get("github_stars") or 0) if isinstance(github_raw, dict) else 0
-                github_forks = int(github_raw.get("github_forks") or 0) if isinstance(github_raw, dict) else 0
-                # Mark is_enriched=0 still so SS enrichment runs once paper turns 7 days old
-                # Only store GitHub data now; full enrichment deferred
+        # Run SS batch and PwC concurrent calls in parallel
+        ss_map, github_map = await asyncio.gather(
+            enricher.get_semantic_scholar_batch(chunk_arxiv_ids),
+            enricher.get_github_data_concurrent(chunk),
+        )
+
+        for p in chunk:
+            aid = p["arxiv_id"]
+            ss = ss_map.get(aid) or {}
+            gh = github_map.get(aid) or {}
+
+            citation_count = int(ss.get("citation_count") or 0)
+            h_index = float(ss.get("h_index_max") or 0.0)
+            github_url = gh.get("github_url")
+            github_stars = int(gh.get("github_stars") or 0)
+            github_forks = int(gh.get("github_forks") or 0)
+
+            try:
+                await turso_db.execute(
+                    "UPDATE papers SET citation_count=?, h_index_max=?, github_url=?, "
+                    "github_stars=?, github_forks=?, is_enriched=1, last_enriched_at=? WHERE rowid=?",
+                    [citation_count, h_index, github_url, github_stars, github_forks, now, p["id"]]
+                )
+                enriched_ids.append(p["id"])
+                logger.debug(f"Enriched {aid}: citations={citation_count}, stars={github_stars}")
+            except Exception as e:
+                logger.error(f"DB update error {aid}: {e}")
+
+        # Rate-limit pause between SS batch chunks (skip after last chunk)
+        if chunk_start + SS_BATCH_SIZE < len(old_papers):
+            await asyncio.sleep(SS_CHUNK_DELAY)
+
+    # ── New papers: GitHub only, SS deferred until paper is >7 days old ─────
+    for chunk_start in range(0, len(new_papers), 50):
+        chunk = new_papers[chunk_start:chunk_start + 50]
+        github_map = await enricher.get_github_data_concurrent(chunk)
+
+        for p in chunk:
+            gh = github_map.get(p["arxiv_id"]) or {}
+            github_url = gh.get("github_url")
+            github_stars = int(gh.get("github_stars") or 0)
+            github_forks = int(gh.get("github_forks") or 0)
+
+            try:
                 await turso_db.execute(
                     "UPDATE papers SET github_url=?, github_stars=?, github_forks=?, "
                     "last_enriched_at=? WHERE rowid=?",
                     [github_url, github_stars, github_forks, now, p["id"]]
                 )
-                # Don't add to enriched_ids — keep is_enriched=0 so SS runs later
                 if github_stars > 0 or github_url:
-                    logger.debug(f"New paper {p['arxiv_id']}: stored GitHub stars={github_stars}, SS deferred")
-                continue
+                    logger.debug(f"New paper {p['arxiv_id']}: GitHub stars={github_stars}, SS deferred")
+            except Exception as e:
+                logger.error(f"DB update error (new) {p['arxiv_id']}: {e}")
+            # Don't add to enriched_ids — keep is_enriched=0 so SS runs later
 
-            # Old paper: full enrichment (citations count towards score)
-            data = await enricher.enrich_paper(p["arxiv_id"], p["title"])
-            citation_count = int(data.get("citation_count") or 0)
-            h_index = float(data.get("h_index_max") or 0.0)
-            github_url = data.get("github_url")
-            github_stars = int(data.get("github_stars") or 0)
-            github_forks = int(data.get("github_forks") or 0)
-
-            await turso_db.execute(
-                "UPDATE papers SET citation_count=?, h_index_max=?, github_url=?, "
-                "github_stars=?, github_forks=?, is_enriched=1, last_enriched_at=? WHERE rowid=?",
-                [citation_count, h_index, github_url, github_stars, github_forks, now, p["id"]]
-            )
-            enriched_ids.append(p["id"])
-            logger.debug(f"Enriched {p['arxiv_id']}: citations={citation_count}, stars={github_stars}")
-        except Exception as e:
-            logger.error(f"Enrich {p['arxiv_id']}: {e}")
-            # Do NOT mark is_enriched=1 on exception — let it retry next hour
-
-    logger.info(f"Enriched {len(enriched_ids)} papers")
+    logger.info(f"Enriched {len(enriched_ids)} old papers, {len(new_papers)} new papers (GitHub only)")
 
     # Rescore enriched papers so citation/github data improves their scores immediately
     if enriched_ids:
