@@ -234,6 +234,63 @@ async def trigger_enrich(batch: int = 50, background_tasks: BackgroundTasks = No
     return {"status": "started", "batch_size": batch}
 
 
+@router.get("/daily-fetch")
+async def daily_fetch_status(db: TursoClient = Depends(get_db), _: dict = Depends(require_admin)):
+    """Return today's fetch log and the list of papers fetched today."""
+    log = await db.fetchone(
+        "SELECT rowid as id, * FROM analysis_log WHERE run_type = 'daily_fetch' ORDER BY rowid DESC LIMIT 1"
+    )
+    papers = await db.fetchall(
+        "SELECT rowid as id, arxiv_id, title, primary_category, current_score, normalized_score, "
+        "is_trending, trend_label, is_enriched, citation_count, github_stars, "
+        "COALESCE(published_at, published_date) as published_at "
+        "FROM papers WHERE date(created_at) = date('now') AND is_deleted = 0 AND is_duplicate = 0 "
+        "ORDER BY COALESCE(normalized_score, current_score, 0) DESC LIMIT 100"
+    )
+    today_total = await db.count("papers", "date(created_at) = date('now') AND is_deleted = 0 AND is_duplicate = 0")
+    today_scored = await db.count("papers", "date(created_at) = date('now') AND current_score > 0 AND is_deleted = 0 AND is_duplicate = 0")
+    today_enriched = await db.count("papers", "date(created_at) = date('now') AND is_enriched = 1 AND is_deleted = 0 AND is_duplicate = 0")
+    return {
+        "log": log or {},
+        "today": {"total": today_total, "scored": today_scored, "enriched": today_enriched},
+        "papers": papers,
+    }
+
+
+@router.get("/enrichment-status")
+async def enrichment_status(db: TursoClient = Depends(get_db), _: dict = Depends(require_admin)):
+    """Detailed enrichment progress: citation and GitHub data coverage."""
+    total = await db.count("papers", "is_deleted = 0 AND is_duplicate = 0")
+    enriched = await db.count("papers", "is_enriched = 1 AND is_deleted = 0")
+    pending = await db.count("papers", "is_enriched = 0 AND is_deleted = 0")
+    with_citations = await db.count("papers", "citation_count > 0 AND is_deleted = 0")
+    with_github = await db.count("papers", "github_stars > 0 AND is_deleted = 0")
+    failed = await db.count(
+        "papers",
+        "is_enriched = 1 AND citation_count = 0 AND github_stars = 0 AND github_url IS NULL AND is_deleted = 0"
+    )
+    top_citations = await db.fetchall(
+        "SELECT rowid as id, arxiv_id, title, primary_category, citation_count, h_index_max, "
+        "normalized_score FROM papers WHERE citation_count > 0 AND is_deleted = 0 "
+        "ORDER BY citation_count DESC LIMIT 5"
+    )
+    top_github = await db.fetchall(
+        "SELECT rowid as id, arxiv_id, title, primary_category, github_stars, github_url, "
+        "normalized_score FROM papers WHERE github_stars > 0 AND is_deleted = 0 "
+        "ORDER BY github_stars DESC LIMIT 5"
+    )
+    return {
+        "total": total, "enriched": enriched, "pending": pending,
+        "with_citations": with_citations, "with_github": with_github,
+        "failed_rate_limit": failed,
+        "enrichment_pct": round(enriched / total * 100, 1) if total else 0,
+        "citations_pct": round(with_citations / total * 100, 1) if total else 0,
+        "github_pct": round(with_github / total * 100, 1) if total else 0,
+        "top_by_citations": top_citations,
+        "top_by_github": top_github,
+    }
+
+
 @router.post("/reset-failed-enrichment")
 async def reset_failed_enrichment(db: TursoClient = Depends(get_db), _: dict = Depends(require_admin)):
     """Reset papers marked enriched but got no data (likely due to 429 rate limiting).

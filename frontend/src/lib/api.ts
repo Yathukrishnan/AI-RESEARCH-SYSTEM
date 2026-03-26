@@ -72,6 +72,8 @@ export const adminApi = {
   triggerRescore: () => api.post('/admin/trigger-rescore'),
   triggerEnrich: (batch = 50) => api.post(`/admin/trigger-enrich?batch=${batch}`),
   resetFailedEnrichment: () => api.post('/admin/reset-failed-enrichment'),
+  getDailyFetch: () => api.get('/admin/daily-fetch'),
+  getEnrichmentStatus: () => api.get('/admin/enrichment-status'),
   getSchedulerStatus: () => api.get('/admin/scheduler/status'),
   getUsers: () => api.get('/admin/users'),
   updateUserRole: (id: number, role: string) => api.patch(`/admin/users/${id}/role?role=${role}`),

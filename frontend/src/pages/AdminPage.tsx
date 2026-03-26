@@ -4,7 +4,8 @@ import { motion } from 'framer-motion'
 import {
   LayoutDashboard, FileText, Settings, Tag, RefreshCw, Plus, Trash2,
   Play, ArrowLeft, Database, TrendingUp, Brain, CheckCircle, Loader2,
-  Activity, Users, Eye, Copy, Shield, ShieldOff, Wifi, WifiOff, Zap
+  Activity, Users, Eye, Copy, Shield, ShieldOff, Wifi, WifiOff, Zap,
+  Clock, BookOpen, Star, AlertTriangle, Download
 } from 'lucide-react'
 import { adminApi } from '@/lib/api'
 import { AdminStats, ConfigItem, Keyword, AnalysisLog, AdminUser } from '@/lib/types'
@@ -49,6 +50,296 @@ function AdminSidebar() {
         })}
       </nav>
     </aside>
+  )
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function toIST(utcStr: string | null | undefined): string {
+  if (!utcStr) return '—'
+  try {
+    return new Date(utcStr).toLocaleString('en-IN', {
+      timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short',
+      hour: '2-digit', minute: '2-digit', hour12: true,
+    })
+  } catch { return utcStr }
+}
+
+function duration(start: string | null | undefined, end: string | null | undefined): string {
+  if (!start || !end) return '—'
+  try {
+    const secs = Math.round((new Date(end).getTime() - new Date(start).getTime()) / 1000)
+    if (secs < 60) return `${secs}s`
+    const m = Math.floor(secs / 60), s = secs % 60
+    return `${m}m ${s}s`
+  } catch { return '—' }
+}
+
+// ── DailyFetchCard ────────────────────────────────────────────────────────────
+
+function DailyFetchCard({ onReset }: { onReset: () => void }) {
+  const [data, setData] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+
+  const load = () => {
+    setLoading(true)
+    adminApi.getDailyFetch()
+      .then((r) => setData(r.data))
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }
+  useEffect(() => { load() }, [])
+
+  const log = data?.log ?? {}
+  const today = data?.today ?? {}
+  const papers = data?.papers ?? []
+
+  const statusColor: Record<string, string> = {
+    running: 'text-yellow-400 bg-yellow-500/10 border-yellow-500/30',
+    storing: 'text-blue-400 bg-blue-500/10 border-blue-500/30',
+    enriching: 'text-cyan-400 bg-cyan-500/10 border-cyan-500/30',
+    scoring: 'text-purple-400 bg-purple-500/10 border-purple-500/30',
+    complete: 'text-green-400 bg-green-500/10 border-green-500/30',
+  }
+  const statusClass = log.status ? (statusColor[log.status] ?? 'text-muted bg-surface-2 border-accent/20') : 'text-muted bg-surface-2 border-accent/20'
+
+  return (
+    <div className="bg-surface border border-accent/15 rounded-2xl overflow-hidden">
+      {/* Header */}
+      <div className="px-5 py-3 border-b border-accent/10 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Download size={15} className="text-accent-2" />
+          <h2 className="text-sm font-semibold text-white">Today's Fetch</h2>
+          {log.status && (
+            <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${statusClass}`}>
+              {log.status}
+            </span>
+          )}
+        </div>
+        <button onClick={load} className="text-xs text-muted hover:text-white transition-colors flex items-center gap-1">
+          <RefreshCw size={11} /> Refresh
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="px-5 py-6 flex items-center gap-2 text-muted text-sm">
+          <Loader2 size={14} className="animate-spin" /> Loading…
+        </div>
+      ) : (
+        <>
+          {/* Timing row */}
+          <div className="px-5 py-3 flex flex-wrap gap-x-6 gap-y-1 border-b border-accent/5 text-xs">
+            <span className="flex items-center gap-1.5 text-muted">
+              <Clock size={11} className="text-accent-2" />
+              <span className="text-slate-400">Started (IST):</span>
+              <span className="text-white font-medium">{toIST(log.started_at)}</span>
+            </span>
+            <span className="flex items-center gap-1.5 text-muted">
+              <Clock size={11} className="text-green-400" />
+              <span className="text-slate-400">Finished (IST):</span>
+              <span className="text-white font-medium">{toIST(log.finished_at)}</span>
+            </span>
+            <span className="flex items-center gap-1.5 text-muted">
+              <span className="text-slate-400">Duration:</span>
+              <span className="text-white font-medium">{duration(log.started_at, log.finished_at)}</span>
+            </span>
+            {log.notes && (
+              <span className="text-muted italic">{log.notes}</span>
+            )}
+          </div>
+
+          {/* Count pills */}
+          <div className="px-5 py-3 flex flex-wrap gap-3 border-b border-accent/5">
+            {[
+              { label: 'Fetched', value: today.total ?? log.total_papers ?? 0, color: 'text-accent-2' },
+              { label: 'Scored', value: today.scored ?? log.scored_papers ?? 0, color: 'text-purple-400' },
+              { label: 'Enriched', value: today.enriched ?? 0, color: 'text-cyan-400' },
+            ].map(({ label, value, color }) => (
+              <div key={label} className="flex items-center gap-2 bg-surface-2 border border-accent/10 rounded-xl px-3 py-1.5">
+                <span className={`text-lg font-bold tabular-nums ${color}`}>{value}</span>
+                <span className="text-xs text-muted">{label}</span>
+              </div>
+            ))}
+            {!log.status && (
+              <p className="text-xs text-muted self-center">No fetch has run yet today. Next auto-fetch at 8:00 AM IST.</p>
+            )}
+          </div>
+
+          {/* Paper list */}
+          {papers.length > 0 ? (
+            <div className="divide-y divide-accent/5 max-h-64 overflow-y-auto">
+              {papers.map((p: any) => (
+                <div key={p.arxiv_id} className="px-5 py-2.5 flex items-center justify-between gap-4 hover:bg-surface-2 transition-colors">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-white line-clamp-1">{p.title}</p>
+                    <p className="text-xs text-muted mt-0.5">{p.primary_category} · {p.arxiv_id}</p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0 text-xs">
+                    {p.citation_count > 0 && (
+                      <span className="text-yellow-400 flex items-center gap-0.5"><BookOpen size={10} /> {p.citation_count}</span>
+                    )}
+                    {p.github_stars > 0 && (
+                      <span className="text-orange-400 flex items-center gap-0.5"><Star size={10} /> {p.github_stars}</span>
+                    )}
+                    {p.is_enriched ? (
+                      <span className="text-cyan-400"><CheckCircle size={11} /></span>
+                    ) : (
+                      <span className="text-muted"><Clock size={11} /></span>
+                    )}
+                    <span className={`font-mono font-bold ${(p.normalized_score ?? 0) > 0.7 ? 'text-green-400' : (p.normalized_score ?? 0) > 0.4 ? 'text-yellow-400' : 'text-muted'}`}>
+                      {p.normalized_score != null ? (p.normalized_score * 100).toFixed(1) : '—'}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="px-5 py-4 text-xs text-muted">
+              No papers fetched yet today. The scheduler runs at 8:00 AM IST (2:30 AM UTC).
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+// ── EnrichmentCard ────────────────────────────────────────────────────────────
+
+function EnrichmentCard() {
+  const [data, setData] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const [resetting, setResetting] = useState(false)
+
+  const load = () => {
+    setLoading(true)
+    adminApi.getEnrichmentStatus()
+      .then((r) => setData(r.data))
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }
+  useEffect(() => { load() }, [])
+
+  const handleReset = async () => {
+    setResetting(true)
+    try {
+      const res: any = await adminApi.resetFailedEnrichment()
+      toast.success(`Reset ${res?.reset_count ?? 0} papers for re-enrichment`)
+      load()
+    } catch {
+      toast.error('Reset failed')
+    } finally {
+      setResetting(false)
+    }
+  }
+
+  if (loading) return (
+    <div className="bg-surface border border-accent/15 rounded-2xl px-5 py-6 flex items-center gap-2 text-muted text-sm">
+      <Loader2 size={14} className="animate-spin" /> Loading enrichment status…
+    </div>
+  )
+  if (!data) return null
+
+  const bars = [
+    { label: 'Enriched (attempted)', value: data.enriched, pct: data.enrichment_pct, color: 'bg-cyan-400' },
+    { label: 'With citation data', value: data.with_citations, pct: data.citations_pct, color: 'bg-yellow-400' },
+    { label: 'With GitHub stars', value: data.with_github, pct: data.github_pct, color: 'bg-orange-400' },
+  ]
+
+  return (
+    <div className="bg-surface border border-accent/15 rounded-2xl overflow-hidden">
+      <div className="px-5 py-3 border-b border-accent/10 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <BookOpen size={15} className="text-yellow-400" />
+          <h2 className="text-sm font-semibold text-white">Citation &amp; GitHub Enrichment</h2>
+        </div>
+        <div className="flex items-center gap-2">
+          {data.failed_rate_limit > 0 && (
+            <button
+              onClick={handleReset} disabled={resetting}
+              className="flex items-center gap-1.5 text-xs px-2.5 py-1 bg-yellow-500/10 border border-yellow-500/30 text-yellow-300 rounded-lg hover:bg-yellow-500/20 disabled:opacity-50 transition-all"
+            >
+              {resetting ? <Loader2 size={11} className="animate-spin" /> : <AlertTriangle size={11} />}
+              Reset {data.failed_rate_limit} failed
+            </button>
+          )}
+          <button onClick={load} className="text-xs text-muted hover:text-white flex items-center gap-1 transition-colors">
+            <RefreshCw size={11} /> Refresh
+          </button>
+        </div>
+      </div>
+
+      <div className="px-5 py-4 space-y-4">
+        {/* Progress bars */}
+        <div className="space-y-2.5">
+          {bars.map(({ label, value, pct, color }) => (
+            <div key={label} className="flex items-center gap-3">
+              <p className="text-xs text-muted w-40 shrink-0">{label}</p>
+              <div className="flex-1 h-1.5 bg-surface-3 rounded-full overflow-hidden">
+                <div className={`h-full ${color} rounded-full transition-all duration-700`} style={{ width: `${pct}%` }} />
+              </div>
+              <span className="text-xs font-mono text-white w-20 text-right shrink-0 tabular-nums">
+                {value.toLocaleString()} <span className="text-muted">({pct}%)</span>
+              </span>
+            </div>
+          ))}
+        </div>
+
+        {/* Status pills */}
+        <div className="flex flex-wrap gap-2 pt-1">
+          <span className="text-xs px-2 py-1 bg-surface-2 border border-accent/10 rounded-lg text-muted">
+            <span className="text-white font-medium">{data.pending.toLocaleString()}</span> pending enrichment
+          </span>
+          {data.failed_rate_limit > 0 && (
+            <span className="text-xs px-2 py-1 bg-yellow-500/10 border border-yellow-500/20 rounded-lg text-yellow-400">
+              <span className="font-medium">{data.failed_rate_limit}</span> rate-limited (429)
+            </span>
+          )}
+        </div>
+
+        {/* Top by citations */}
+        {data.top_by_citations?.length > 0 && (
+          <div>
+            <p className="text-xs font-semibold text-slate-400 mb-2 flex items-center gap-1.5">
+              <BookOpen size={11} className="text-yellow-400" /> Top by Citations
+            </p>
+            <div className="space-y-1">
+              {data.top_by_citations.map((p: any) => (
+                <div key={p.arxiv_id} className="flex items-center justify-between gap-3 text-xs">
+                  <p className="text-white line-clamp-1 flex-1">{p.title}</p>
+                  <span className="text-yellow-400 font-bold shrink-0 tabular-nums">{p.citation_count.toLocaleString()} cit.</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Top by GitHub stars */}
+        {data.top_by_github?.length > 0 && (
+          <div>
+            <p className="text-xs font-semibold text-slate-400 mb-2 flex items-center gap-1.5">
+              <Star size={11} className="text-orange-400" /> Top by GitHub Stars
+            </p>
+            <div className="space-y-1">
+              {data.top_by_github.map((p: any) => (
+                <div key={p.arxiv_id} className="flex items-center justify-between gap-3 text-xs">
+                  <p className="text-white line-clamp-1 flex-1">{p.title}</p>
+                  <span className="text-orange-400 font-bold shrink-0 tabular-nums">
+                    <Star size={9} className="inline mr-0.5" />{p.github_stars.toLocaleString()}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {data.with_citations === 0 && data.with_github === 0 && (
+          <p className="text-xs text-muted">
+            No citation or GitHub data yet. Enrichment runs hourly (100 papers/run) using Semantic Scholar and Papers With Code.
+          </p>
+        )}
+      </div>
+    </div>
   )
 }
 
@@ -208,6 +499,12 @@ function Dashboard() {
           Auto-runs hourly (100 papers/run). <span className="text-yellow-400 font-medium">Reset Failed</span> re-queues papers that got rate-limited (429) during enrichment.
         </p>
       </div>
+
+      {/* Daily Fetch section */}
+      <DailyFetchCard onReset={load} />
+
+      {/* Citation & GitHub Enrichment section */}
+      <EnrichmentCard />
 
       {/* Recent papers */}
       {(data?.recent_papers?.length ?? 0) > 0 && (

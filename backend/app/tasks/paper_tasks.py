@@ -200,12 +200,25 @@ async def fetch_and_store_papers(days: int = 1):
         logger.info("Empty DB → 30-day initial fetch")
         days = settings.INITIAL_FETCH_DAYS
 
+    # Create log entry at the very start so admin can see fetch is running
+    await turso_db.execute(
+        "INSERT INTO analysis_log (run_type, status, notes) VALUES ('daily_fetch', 'running', ?)",
+        [f"Fetching {days} day(s) of arXiv papers…"]
+    )
+    log_row = await turso_db.fetchone("SELECT rowid as id FROM analysis_log ORDER BY rowid DESC LIMIT 1")
+    log_id = log_row["id"] if log_row else 0
+
     raw_papers = await fetch_papers_for_date_range(days=days)
     keywords = await _get_keywords()
     current_week = await _current_week_number()
     display_week = current_week + 1  # New papers show next week
     new_count = 0
     now = datetime.now(timezone.utc).isoformat()
+
+    await turso_db.execute(
+        "UPDATE analysis_log SET status='storing', notes=? WHERE id=?",
+        [f"Got {len(raw_papers)} from arXiv, storing new ones…", log_id]
+    )
 
     for p in raw_papers:
         try:
@@ -235,28 +248,50 @@ async def fetch_and_store_papers(days: int = 1):
 
             if new_count % 50 == 0:
                 logger.info(f"  Stored {new_count} papers…")
+                await turso_db.execute(
+                    "UPDATE analysis_log SET total_papers=?, notes=? WHERE id=?",
+                    [new_count, f"Stored {new_count} papers so far…", log_id]
+                )
 
         except Exception as e:
             logger.error(f"Store error {p.get('arxiv_id')}: {e}")
 
     logger.info(f"Stored {new_count} new papers (display_week={display_week})")
+
     if new_count > 0:
+        await turso_db.execute(
+            "UPDATE analysis_log SET total_papers=?, status='enriching', notes=? WHERE id=?",
+            [new_count, f"Stored {new_count} papers, enriching citations/GitHub…", log_id]
+        )
         # Enrich first (adds citation count, github stars) then score so those values are factored in
         await enrich_pending_papers(batch_size=min(new_count, 50))
-        # Score all unscored papers (new + any previously missed)
-        from app.tasks.analysis import score_all_papers, normalize_scores, assign_trend_labels
+
         await turso_db.execute(
-            "INSERT INTO analysis_log (run_type, status) VALUES ('daily_fetch_score', 'running')"
+            "UPDATE analysis_log SET status='scoring', notes=? WHERE id=?",
+            [f"Enriched, now scoring {new_count} papers…", log_id]
         )
-        log_row = await turso_db.fetchone("SELECT rowid as id FROM analysis_log ORDER BY rowid DESC LIMIT 1")
-        log_id = log_row["id"] if log_row else 0
+        from app.tasks.analysis import score_all_papers, normalize_scores, assign_trend_labels
         await score_all_papers(log_id, force=False)
         await normalize_scores()
         await assign_trend_labels()
-        await turso_db.execute(
-            "UPDATE analysis_log SET status='complete', finished_at=datetime('now') WHERE id=?", [log_id]
+
+        # Count how many new papers ended up scored today
+        scored_today = await turso_db.count(
+            "papers", "date(created_at) = date('now') AND current_score > 0 AND is_deleted = 0"
         )
-        logger.info(f"Daily fetch pipeline complete: {new_count} papers fetched, scored, normalised, trend-labelled")
+        await turso_db.execute(
+            "UPDATE analysis_log SET status='complete', finished_at=datetime('now'), "
+            "total_papers=?, scored_papers=?, notes=? WHERE id=?",
+            [new_count, scored_today,
+             f"Done: {new_count} fetched, {scored_today} scored, display_week={display_week}", log_id]
+        )
+        logger.info(f"Daily fetch pipeline complete: {new_count} papers fetched, {scored_today} scored")
+    else:
+        await turso_db.execute(
+            "UPDATE analysis_log SET status='complete', finished_at=datetime('now'), "
+            "total_papers=0, scored_papers=0, notes='No new papers found' WHERE id=?",
+            [log_id]
+        )
 
 
 async def process_single_paper(arxiv_id: str):
