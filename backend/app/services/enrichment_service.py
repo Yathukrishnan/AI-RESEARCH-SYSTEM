@@ -12,10 +12,10 @@ class EnrichmentService:
         self.pwc_url = papers_with_code_url
         self.headers = {"User-Agent": "AI-Research-Intelligence/1.0"}
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=2, min=10, max=60))
     async def get_semantic_scholar_data(self, arxiv_id: str) -> Optional[Dict]:
         """Fetch citation count, author h-index from Semantic Scholar."""
-        await asyncio.sleep(1)  # Rate limiting
+        await asyncio.sleep(2)  # Rate limiting
 
         async with httpx.AsyncClient(headers=self.headers, timeout=20) as client:
             try:
@@ -26,6 +26,12 @@ class EnrichmentService:
                 }
                 resp = await client.get(url, params=params)
 
+                if resp.status_code == 429:
+                    retry_after = int(resp.headers.get("Retry-After", 30))
+                    logger.warning(f"Semantic Scholar rate limited (429) for {arxiv_id}, sleeping {retry_after}s")
+                    await asyncio.sleep(retry_after)
+                    raise httpx.HTTPStatusError("429 rate limited", request=resp.request, response=resp)
+
                 if resp.status_code == 404:
                     # Try search
                     search_url = f"{self.ss_url}/paper/search"
@@ -34,6 +40,10 @@ class EnrichmentService:
                         "fields": "citationCount,authors",
                         "limit": 1
                     })
+                    if resp.status_code == 429:
+                        retry_after = int(resp.headers.get("Retry-After", 30))
+                        await asyncio.sleep(retry_after)
+                        raise httpx.HTTPStatusError("429 rate limited", request=resp.request, response=resp)
 
                 if resp.status_code != 200:
                     return None

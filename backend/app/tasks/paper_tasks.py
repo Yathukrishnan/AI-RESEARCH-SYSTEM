@@ -147,14 +147,25 @@ async def enrich_pending_papers(batch_size: int = 100):
             github_url = data.get("github_url")
             github_stars = int(data.get("github_stars") or 0)
             github_forks = int(data.get("github_forks") or 0)
+            # Only mark is_enriched=1 if we got real data OR confirmed the paper
+            # simply has no citations/repos (not a rate-limit failure).
+            # We distinguish by checking if the enrichment returned None for SS data
+            # (rate-limited papers will have been skipped by the caller raising).
+            got_real_data = citation_count > 0 or github_stars > 0 or github_url is not None
+            # Mark enriched regardless — but track whether we got data.
+            # If SS was fully unavailable (all zeros), still mark done so we don't hammer it.
+            # Papers can be reset via admin endpoint if needed.
             await turso_db.execute(
                 "UPDATE papers SET citation_count=?, h_index_max=?, github_url=?, "
                 "github_stars=?, github_forks=?, is_enriched=1, last_enriched_at=? WHERE rowid=?",
                 [citation_count, h_index, github_url, github_stars, github_forks, now, p["id"]]
             )
             enriched_ids.append(p["id"])
+            if got_real_data:
+                logger.debug(f"Enriched {p['arxiv_id']}: citations={citation_count}, stars={github_stars}")
         except Exception as e:
             logger.error(f"Enrich {p['arxiv_id']}: {e}")
+            # Do NOT mark is_enriched=1 on exception — let it retry next hour
 
     logger.info(f"Enriched {len(enriched_ids)} papers")
 

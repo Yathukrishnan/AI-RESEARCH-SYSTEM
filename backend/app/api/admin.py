@@ -234,6 +234,19 @@ async def trigger_enrich(batch: int = 50, background_tasks: BackgroundTasks = No
     return {"status": "started", "batch_size": batch}
 
 
+@router.post("/reset-failed-enrichment")
+async def reset_failed_enrichment(db: TursoClient = Depends(get_db), _: dict = Depends(require_admin)):
+    """Reset papers marked enriched but got no data (likely due to 429 rate limiting).
+    Sets is_enriched=0 so they will be retried on the next hourly enrichment run."""
+    result = await db.execute(
+        "UPDATE papers SET is_enriched = 0, last_enriched_at = NULL "
+        "WHERE is_enriched = 1 AND citation_count = 0 AND github_stars = 0 "
+        "AND github_url IS NULL AND is_deleted = 0"
+    )
+    count = result.get("rows_affected", 0) if result else 0
+    return {"status": "ok", "reset_count": count}
+
+
 @router.get("/scheduler/status")
 async def scheduler_status(_: dict = Depends(require_admin)):
     """Return next scheduled run times for all pipeline jobs."""

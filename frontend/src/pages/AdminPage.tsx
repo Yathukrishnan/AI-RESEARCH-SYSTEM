@@ -77,12 +77,18 @@ function Dashboard() {
 
   useEffect(() => { load() }, [])
 
-  const trigger = async (action: 'fetch' | 'rescore' | 'enrich') => {
+  const trigger = async (action: 'fetch' | 'rescore' | 'enrich' | 'reset-enrich') => {
     setTriggering(action)
     try {
       if (action === 'fetch') await adminApi.triggerFetch(parseInt(fetchDays) || 1)
       else if (action === 'rescore') await adminApi.triggerRescore()
-      else await adminApi.triggerEnrich(200)
+      else if (action === 'enrich') await adminApi.triggerEnrich(200)
+      else {
+        const res: any = await adminApi.resetFailedEnrichment()
+        toast.success(`Reset ${res?.reset_count ?? 0} papers for re-enrichment`)
+        setTimeout(load, 1000)
+        return
+      }
       toast.success(`${action === 'fetch' ? 'Fetch' : action === 'rescore' ? 'Rescore' : 'Enrich'} triggered!`)
       setTimeout(load, 2000)
     } catch {
@@ -188,10 +194,18 @@ function Dashboard() {
             {triggering === 'enrich' ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
             Enrich Now
           </button>
+          <button
+            onClick={() => trigger('reset-enrich')} disabled={!!triggering}
+            title="Reset papers marked enriched with zero data (rate-limit failures) so they retry"
+            className="flex items-center gap-2 px-4 py-2 bg-yellow-500/10 border border-yellow-500/30 text-yellow-300 text-sm font-medium rounded-xl hover:bg-yellow-500/20 disabled:opacity-50 transition-all"
+          >
+            {triggering === 'reset-enrich' ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+            Reset Failed
+          </button>
         </div>
         <p className="text-xs text-muted">
           <span className="text-green-400 font-medium">Enrich</span> fetches citation counts &amp; GitHub stars from Semantic Scholar / Papers With Code.
-          Auto-runs every 30 min (50 papers/run). Click <em>Enrich Now</em> to process 200 at once.
+          Auto-runs hourly (100 papers/run). <span className="text-yellow-400 font-medium">Reset Failed</span> re-queues papers that got rate-limited (429) during enrichment.
         </p>
       </div>
 
