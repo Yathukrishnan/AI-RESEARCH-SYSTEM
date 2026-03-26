@@ -221,6 +221,7 @@ async def enrich_pending_papers(batch_size: int = 500):
             await asyncio.sleep(SS_CHUNK_DELAY)
 
     # ── New papers: GitHub only, SS deferred until paper is >7 days old ─────
+    new_github_ids = []  # papers that got github_stars > 0 — need rescore
     for chunk_start in range(0, len(new_papers), 50):
         chunk = new_papers[chunk_start:chunk_start + 50]
         github_map = await enricher.get_github_data_concurrent(chunk)
@@ -239,18 +240,23 @@ async def enrich_pending_papers(batch_size: int = 500):
                 )
                 if github_stars > 0 or github_url:
                     logger.debug(f"New paper {p['arxiv_id']}: GitHub stars={github_stars}, SS deferred")
+                    new_github_ids.append(p["id"])
             except Exception as e:
                 logger.error(f"DB update error (new) {p['arxiv_id']}: {e}")
             # Don't add to enriched_ids — keep is_enriched=0 so SS runs later
 
-    logger.info(f"Enriched {len(enriched_ids)} old papers, {len(new_papers)} new papers (GitHub only)")
+    logger.info(
+        f"Enriched {len(enriched_ids)} old papers, {len(new_papers)} new papers (GitHub only); "
+        f"{len(new_github_ids)} new papers have GitHub stars → rescoring"
+    )
 
-    # Rescore enriched papers so citation/github data improves their scores immediately
-    if enriched_ids:
+    # Rescore all papers that received new data so scores reflect stars/citations immediately
+    all_rescore_ids = enriched_ids + new_github_ids
+    if all_rescore_ids:
         from app.tasks.analysis import normalize_scores, assign_trend_labels
         from app.services.scorer import compute_score
         now_dt = datetime.now(timezone.utc)
-        for pid in enriched_ids:
+        for pid in all_rescore_ids:
             try:
                 row = await turso_db.fetchone("SELECT rowid as id, * FROM papers WHERE rowid=?", [pid])
                 if not row:
@@ -264,7 +270,7 @@ async def enrich_pending_papers(batch_size: int = 500):
                 logger.error(f"Rescore after enrich {pid}: {e}")
         await normalize_scores()
         await assign_trend_labels()
-        logger.info(f"Rescored {len(enriched_ids)} papers after enrichment")
+        logger.info(f"Rescored {len(enriched_ids)} old + {len(new_github_ids)} new (with GitHub stars) papers")
 
 
 async def fetch_and_store_papers(days: int = 1):

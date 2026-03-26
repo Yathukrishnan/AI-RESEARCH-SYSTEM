@@ -112,7 +112,7 @@ async def lifespan(app: FastAPI):
         if fetch_should_have_run:
             today_fetch = await turso_db.fetchone(
                 "SELECT id FROM analysis_log WHERE run_type = 'daily_fetch' "
-                "AND status = 'complete' AND date(created_at) = date('now') "
+                "AND status = 'complete' AND date(started_at) = date('now') "
                 "ORDER BY id DESC LIMIT 1"
             )
             if not today_fetch:
