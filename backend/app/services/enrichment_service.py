@@ -169,7 +169,9 @@ class EnrichmentService:
                 if resp.status_code != 200:
                     return None
 
-                results = resp.json().get("results") or []
+                # PwC returns {"count": N, "results": [...]} — extract the list
+                body = resp.json()
+                results = (body.get("results") if isinstance(body, dict) else body) or []
                 if not results:
                     return None
 
@@ -183,15 +185,16 @@ class EnrichmentService:
                         "github_forks": 0,
                     }
 
-                # Fallback: repos endpoint
+                # Fallback: repos endpoint — also returns {"count": N, "results": [...]}
                 repos_resp = await client.get(
                     f"{self.pwc_url}/papers/{paper_data.get('id', '')}/repositories/",
                     timeout=10,
                 )
                 if repos_resp.status_code == 200:
-                    repos = repos_resp.json() or []
+                    repos_body = repos_resp.json()
+                    repos = (repos_body.get("results") if isinstance(repos_body, dict) else repos_body) or []
                     if repos:
-                        top = max(repos, key=lambda r: r.get("stars", 0))
+                        top = max(repos, key=lambda r: r.get("stars", 0) if isinstance(r, dict) else 0)
                         return {
                             "github_url": top.get("url", ""),
                             "github_stars": int(top.get("stars") or 0),
