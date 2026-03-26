@@ -191,14 +191,19 @@ async def update_config(update: ConfigUpdate, db: TursoClient = Depends(get_db),
 
 @router.get("/keywords")
 async def get_keywords(db: TursoClient = Depends(get_db), _: dict = Depends(require_admin)):
-    return await db.fetchall("SELECT * FROM keywords ORDER BY weight DESC")
+    # GROUP BY lower(keyword) to hide any case-variant duplicates that slipped in
+    # before the UNIQUE constraint was enforced; MIN(id) keeps the oldest entry.
+    return await db.fetchall(
+        "SELECT MIN(id) as id, keyword, weight, category, is_active, created_at "
+        "FROM keywords GROUP BY lower(keyword) ORDER BY weight DESC, keyword ASC"
+    )
 
 
 @router.post("/keywords")
 async def add_keyword(kw: KeywordCreate, db: TursoClient = Depends(get_db), _: dict = Depends(require_admin)):
     try:
         await db.execute(
-            "INSERT INTO keywords (keyword, weight, category) VALUES (?, ?, ?)",
+            "INSERT OR IGNORE INTO keywords (keyword, weight, category) VALUES (?, ?, ?)",
             [kw.keyword.lower().strip(), kw.weight, kw.category]
         )
         return {"status": "added"}

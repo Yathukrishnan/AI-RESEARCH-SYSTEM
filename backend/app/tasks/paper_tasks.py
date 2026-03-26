@@ -21,7 +21,16 @@ logger = logging.getLogger(__name__)
 async def _get_keywords():
     rows = await turso_db.fetchall("SELECT keyword FROM keywords WHERE is_active = 1")
     extras = [r["keyword"] for r in rows]
-    return extras + AI_KEYWORDS if extras else AI_KEYWORDS
+    combined = extras + AI_KEYWORDS if extras else AI_KEYWORDS
+    # Deduplicate while preserving order (DB keywords first, then AI_KEYWORDS extras)
+    seen = set()
+    result = []
+    for kw in combined:
+        key = kw.lower().strip()
+        if key not in seen:
+            seen.add(key)
+            result.append(kw)
+    return result
 
 
 async def _current_week_number() -> int:

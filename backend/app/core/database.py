@@ -217,7 +217,19 @@ async def init_db():
         if await db.table_exists(table):
             await db.add_column_if_missing(table, col, typ, default)
 
-    # 4. Migrate published_date → published_at (for existing papers that predate our schema)
+    # 4. Deduplicate keywords — remove rows where a lower-case duplicate exists,
+    #    keeping the oldest entry (MIN id). Runs on every boot but is a no-op when clean.
+    if await db.table_exists("keywords"):
+        try:
+            await db.execute(
+                "DELETE FROM keywords WHERE id NOT IN ("
+                "  SELECT MIN(id) FROM keywords GROUP BY lower(keyword)"
+                ")"
+            )
+        except Exception as e:
+            logger.warning(f"Keyword dedup warning: {e}")
+
+    # 5. Migrate published_date → published_at (for existing papers that predate our schema)
     if await db.table_exists("papers"):
         try:
             await db.execute(
