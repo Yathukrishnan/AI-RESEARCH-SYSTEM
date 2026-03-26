@@ -101,7 +101,30 @@ async def lifespan(app: FastAPI):
     # 4. Start scheduler
     start_scheduler()
 
-    # 5. Check if full analysis has been run
+    # 5. Startup catch-up: if today's daily fetch was missed (e.g. server was down
+    #    at 02:30 UTC), run it now so papers never go a full day without being fetched.
+    #    APScheduler's misfire_grace_time handles restarts within the grace window,
+    #    but this explicit check is a belt-and-braces guarantee.
+    try:
+        from datetime import datetime, timezone as tz
+        now_utc = datetime.now(tz.utc)
+        fetch_should_have_run = now_utc.hour > 2 or (now_utc.hour == 2 and now_utc.minute >= 30)
+        if fetch_should_have_run:
+            today_fetch = await turso_db.fetchone(
+                "SELECT id FROM analysis_log WHERE run_type = 'daily_fetch' "
+                "AND status = 'complete' AND date(created_at) = date('now') "
+                "ORDER BY id DESC LIMIT 1"
+            )
+            if not today_fetch:
+                logger.info("Startup catch-up: today's daily fetch not found — triggering now")
+                from app.tasks.paper_tasks import fetch_and_store_papers
+                asyncio.create_task(fetch_and_store_papers(1))
+            else:
+                logger.info("Startup catch-up: today's daily fetch already completed — skipping")
+    except Exception as e:
+        logger.warning(f"Startup catch-up check failed (non-fatal): {e}")
+
+    # 6. Check if full analysis has been run
     analysis_done = await get_system_config("ANALYSIS_COMPLETE")
 
     if analysis_done != "1":

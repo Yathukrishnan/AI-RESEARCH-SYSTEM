@@ -44,7 +44,7 @@ AI_KEYWORDS = [
     "inference optimization", "efficient inference", "speculative decoding",
     # Vision
     "vision transformer", "vit", "clip", "sam", "segment anything", "dino",
-    "stable diffusion", "controlnet", "image editing",
+    "controlnet", "image editing",
     # Embeddings
     "embedding", "representation learning", "word embedding", "sentence embedding",
     "vector database", "semantic search", "dense retrieval",

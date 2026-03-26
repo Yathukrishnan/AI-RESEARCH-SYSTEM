@@ -60,45 +60,55 @@ def setup_scheduler():
     from app.tasks.paper_tasks import fetch_and_store_papers, rescore_all_papers, enrich_pending_papers
 
     # Daily fetch at 8 AM IST (2:30 AM UTC) – new papers get display_week = current+1
+    # misfire_grace_time=82800 (23 h): if server was down at 2:30 AM and wakes up any
+    # time during the day, APScheduler will still fire the missed job immediately.
+    # coalesce=True: if multiple runs were missed, execute only once (not N times).
     scheduler.add_job(
         fetch_and_store_papers,
-        CronTrigger(hour=2, minute=30),
+        CronTrigger(hour=2, minute=30, timezone="UTC"),
         id="daily_fetch",
         args=[1],
         replace_existing=True,
-        misfire_grace_time=3600,
+        coalesce=True,
+        misfire_grace_time=82800,
     )
 
     # Weekly rescore Sunday 2 AM UTC – recompute scores, trends, normalisation
     scheduler.add_job(
         rescore_all_papers,
-        CronTrigger(day_of_week="sun", hour=2, minute=0),
+        CronTrigger(day_of_week="sun", hour=2, minute=0, timezone="UTC"),
         id="weekly_rescore",
         replace_existing=True,
-        misfire_grace_time=3600,
+        coalesce=True,
+        misfire_grace_time=82800,
     )
 
     # Weekly content transition Monday 00:05 UTC – flip display week
     scheduler.add_job(
         _weekly_content_transition,
-        CronTrigger(day_of_week="mon", hour=0, minute=5),
+        CronTrigger(day_of_week="mon", hour=0, minute=5, timezone="UTC"),
         id="weekly_content_transition",
         replace_existing=True,
-        misfire_grace_time=3600,
+        coalesce=True,
+        misfire_grace_time=82800,
     )
 
     # Enrich unenriched papers every hour, 500 papers per run (batch API — ~50 papers/4s)
     scheduler.add_job(
         enrich_pending_papers,
-        CronTrigger(minute=0),
+        CronTrigger(minute=0, timezone="UTC"),
         id="enrich_pending",
         args=[500],
         replace_existing=True,
-        misfire_grace_time=600,
+        coalesce=True,
+        misfire_grace_time=3600,
     )
 
-    logger.info("Scheduler configured: daily_fetch(08:00), weekly_rescore(Sun 02:00), "
-                "weekly_content_transition(Mon 00:05), enrich_pending(*/2h)")
+    logger.info(
+        "Scheduler configured: daily_fetch(02:30 UTC / 08:00 IST), "
+        "weekly_rescore(Sun 02:00 UTC), weekly_content_transition(Mon 00:05 UTC), "
+        "enrich_pending(hourly)"
+    )
 
 
 def get_scheduler_status() -> list[dict]:
