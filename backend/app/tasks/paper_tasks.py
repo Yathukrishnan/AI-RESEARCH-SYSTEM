@@ -209,6 +209,7 @@ async def enrich_pending_papers(batch_size: int = 500):
             gh = github_map.get(aid) or {}
 
             citation_count = int(ss.get("citation_count") or 0)
+            influential_citation_count = int(ss.get("influential_citation_count") or 0)
             h_index = float(ss.get("h_index_max") or 0.0)
             github_url = gh.get("github_url")
             github_stars = int(gh.get("github_stars") or 0)
@@ -216,9 +217,11 @@ async def enrich_pending_papers(batch_size: int = 500):
 
             try:
                 await turso_db.execute(
-                    "UPDATE papers SET citation_count=?, h_index_max=?, github_url=?, "
+                    "UPDATE papers SET citation_count=?, influential_citation_count=?, "
+                    "h_index_max=?, github_url=?, "
                     "github_stars=?, github_forks=?, is_enriched=1, last_enriched_at=? WHERE rowid=?",
-                    [citation_count, h_index, github_url, github_stars, github_forks, now, p["id"]]
+                    [citation_count, influential_citation_count, h_index,
+                     github_url, github_stars, github_forks, now, p["id"]]
                 )
                 enriched_ids.append(p["id"])
                 logger.debug(f"Enriched {aid}: citations={citation_count}, stars={github_stars}")
@@ -350,19 +353,29 @@ async def fetch_and_store_papers(days: int = 1):
     logger.info(f"Stored {new_count} new papers (display_week={display_week})")
 
     if new_count > 0:
-        await turso_db.execute(
-            "UPDATE analysis_log SET total_papers=?, status='enriching', notes=? WHERE id=?",
-            [new_count, f"Stored {new_count} papers, enriching citations/GitHub…", log_id]
-        )
-        # Enrich first (adds citation count, github stars) then score so those values are factored in
-        await enrich_pending_papers(batch_size=min(new_count, 50))
-
+        # ── Step 1: AI score first ──────────────────────────────────────────
+        # Must run BEFORE enrichment so ai_relevance_score / ai_impact_score are
+        # written to DB. The enrichment rescore (step 2) then reads those values
+        # and produces a full score: AI + citations + GitHub.
+        # If we enriched first, papers would get current_score > 0 from citations
+        # alone, and score_all_papers(force=False) would skip them permanently.
         await turso_db.execute(
             "UPDATE analysis_log SET status='scoring', notes=? WHERE id=?",
-            [f"Enriched, now scoring {new_count} papers…", log_id]
+            [f"Scoring {new_count} papers with AI validation…", log_id]
         )
         from app.tasks.analysis import score_all_papers, normalize_scores, assign_trend_labels
         await score_all_papers(log_id, force=False)
+
+        # ── Step 2: Enrich (citations + GitHub) then rescore ────────────────
+        # Now ai_relevance_score is set, so the rescore inside enrich_pending_papers
+        # produces current_score = AI relevance + citations + GitHub + recency/decay.
+        await turso_db.execute(
+            "UPDATE analysis_log SET status='enriching', notes=? WHERE id=?",
+            [f"AI scored, now enriching citations/GitHub for {new_count} papers…", log_id]
+        )
+        await enrich_pending_papers(batch_size=min(new_count, 50))
+
+        # ── Step 3: Final normalize pass (covers papers not in enrich batch) ─
         await normalize_scores()
         await assign_trend_labels()
 

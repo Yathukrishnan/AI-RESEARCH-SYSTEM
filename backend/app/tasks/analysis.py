@@ -45,7 +45,15 @@ def _normalize_title(title: str) -> str:
 async def _get_keywords() -> List[str]:
     rows = await turso_db.fetchall("SELECT keyword FROM keywords WHERE is_active = 1")
     extras = [r["keyword"] for r in rows]
-    return extras + AI_KEYWORDS if extras else AI_KEYWORDS
+    combined = extras + AI_KEYWORDS if extras else AI_KEYWORDS
+    seen: set = set()
+    result = []
+    for kw in combined:
+        key = kw.lower().strip()
+        if key not in seen:
+            seen.add(key)
+            result.append(kw)
+    return result
 
 
 # ── Step 1: Inspect ──────────────────────────────────────────────────────────
