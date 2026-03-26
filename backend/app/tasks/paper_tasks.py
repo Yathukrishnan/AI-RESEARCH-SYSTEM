@@ -119,6 +119,19 @@ async def rescore_all_papers():
         "UPDATE papers SET is_deleted = 1 WHERE stale_score_weeks >= 2 AND current_score < 0.10 AND is_deleted = 0"
     )
 
+    # Re-queue enrichment for old papers (>30 days) that have 0 citations and 0 github data.
+    # They may have been rate-limited (429) or not yet indexed in Semantic Scholar when first enriched.
+    # Re-checking weekly gives them a chance to accumulate real citation data over time.
+    reset_result = await turso_db.execute(
+        "UPDATE papers SET is_enriched = 0, last_enriched_at = NULL "
+        "WHERE is_enriched = 1 AND citation_count = 0 AND github_stars = 0 AND github_url IS NULL "
+        "AND is_deleted = 0 "
+        "AND date(COALESCE(published_at, published_date, '2020-01-01')) <= date('now', '-30 days')"
+    )
+    reset_count = reset_result.get("rows_affected", 0) if reset_result else 0
+    if reset_count:
+        logger.info(f"Weekly: reset {reset_count} old papers (>30d, zero citations) for re-enrichment")
+
     await normalize_scores()
     await assign_trend_labels()
     logger.info("Weekly rescore complete")
