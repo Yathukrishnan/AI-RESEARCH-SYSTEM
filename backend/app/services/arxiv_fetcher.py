@@ -12,6 +12,19 @@ logger = logging.getLogger(__name__)
 
 ARXIV_CATEGORIES = ["cs.AI", "cs.LG", "cs.CL", "cs.CV", "cs.NE", "stat.ML"]
 
+async def get_active_categories() -> List[str]:
+    """Load active subject categories from DB, fall back to hardcoded list."""
+    try:
+        from app.core.turso import db as turso_db
+        rows = await turso_db.fetchall(
+            "SELECT subject_code FROM arxiv_subjects WHERE is_active = 1 ORDER BY subject_code"
+        )
+        if rows:
+            return [r["subject_code"] for r in rows]
+    except Exception:
+        pass
+    return ARXIV_CATEGORIES
+
 def compute_hash(arxiv_id: str) -> str:
     return hashlib.sha256(arxiv_id.encode()).hexdigest()
 
@@ -126,7 +139,8 @@ async def fetch_papers_for_date_range(days: int = 1, max_per_category: int = 500
         follow_redirects=True
     ) as client:
         # Build combined category query
-        cat_query = " OR ".join([f"cat:{c}" for c in ARXIV_CATEGORIES])
+        active_cats = await get_active_categories()
+        cat_query = " OR ".join([f"cat:{c}" for c in active_cats])
         query = f"({cat_query}) AND submittedDate:[{date_filter}000000 TO 99991231235959]"
 
         start = 0

@@ -81,6 +81,48 @@ async def seed_defaults():
         except Exception as e:
             logger.warning(f"Could not seed keyword '{kw}': {e}")
 
+    # arXiv subject categories
+    subjects = [
+        ("cs.AI",    "Artificial Intelligence"),
+        ("cs.LG",    "Machine Learning"),
+        ("cs.CL",    "Computation and Language"),
+        ("cs.CV",    "Computer Vision and Pattern Recognition"),
+        ("cs.NE",    "Neural and Evolutionary Computing"),
+        ("stat.ML",  "Statistics — Machine Learning"),
+        ("cs.RO",    "Robotics"),
+        ("cs.IR",    "Information Retrieval"),
+        ("cs.HC",    "Human-Computer Interaction"),
+        ("cs.CR",    "Cryptography and Security"),
+        ("cs.DC",    "Distributed and Parallel Computing"),
+        ("cs.DB",    "Databases"),
+        ("cs.MM",    "Multimedia"),
+        ("cs.GR",    "Graphics"),
+        ("cs.AR",    "Hardware Architecture"),
+        ("cs.DS",    "Data Structures and Algorithms"),
+        ("cs.SE",    "Software Engineering"),
+        ("cs.PL",    "Programming Languages"),
+        ("cs.SY",    "Systems and Control"),
+        ("cs.GT",    "Computer Science and Game Theory"),
+        ("cs.MA",    "Multiagent Systems"),
+        ("cs.CG",    "Computational Geometry"),
+        ("cs.ET",    "Emerging Technologies"),
+        ("eess.AS",  "Audio and Speech Processing"),
+        ("eess.IV",  "Image and Video Processing"),
+        ("eess.SP",  "Signal Processing"),
+        ("math.OC",  "Optimization and Control"),
+        ("math.ST",  "Statistics Theory"),
+        ("q-bio.NC", "Neurons and Cognition"),
+        ("quant-ph", "Quantum Physics"),
+    ]
+    for code, desc in subjects:
+        try:
+            await turso_db.execute(
+                "INSERT OR IGNORE INTO arxiv_subjects (subject_code, description) VALUES (?, ?)",
+                [code, desc]
+            )
+        except Exception as e:
+            logger.warning(f"Could not seed subject '{code}': {e}")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

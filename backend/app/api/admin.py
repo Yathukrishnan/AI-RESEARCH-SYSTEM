@@ -20,6 +20,10 @@ class KeywordCreate(BaseModel):
     weight: float = 1.0
     category: str = "general"
 
+class SubjectCreate(BaseModel):
+    subject_code: str
+    description: str = ""
+
 class ManualPaperAdd(BaseModel):
     arxiv_id: str
 
@@ -221,6 +225,40 @@ async def add_keyword(kw: KeywordCreate, db: TursoClient = Depends(get_db), _: d
 async def delete_keyword(kw_id: int, db: TursoClient = Depends(get_db), _: dict = Depends(require_admin)):
     await db.execute("DELETE FROM keywords WHERE id = ?", [kw_id])
     return {"status": "deleted"}
+
+
+@router.get("/subjects")
+async def get_subjects(db: TursoClient = Depends(get_db), _: dict = Depends(require_admin)):
+    return await db.fetchall(
+        "SELECT id, subject_code, description, is_active FROM arxiv_subjects ORDER BY subject_code ASC"
+    )
+
+
+@router.post("/subjects")
+async def add_subject(s: SubjectCreate, db: TursoClient = Depends(get_db), _: dict = Depends(require_admin)):
+    try:
+        await db.execute(
+            "INSERT OR IGNORE INTO arxiv_subjects (subject_code, description) VALUES (?, ?)",
+            [s.subject_code.strip().lower(), s.description.strip()]
+        )
+        return {"status": "added"}
+    except Exception:
+        raise HTTPException(status_code=400, detail="Subject already exists")
+
+
+@router.delete("/subjects/{subject_id}")
+async def delete_subject(subject_id: int, db: TursoClient = Depends(get_db), _: dict = Depends(require_admin)):
+    await db.execute("DELETE FROM arxiv_subjects WHERE id = ?", [subject_id])
+    return {"status": "deleted"}
+
+
+@router.patch("/subjects/{subject_id}/toggle")
+async def toggle_subject(subject_id: int, db: TursoClient = Depends(get_db), _: dict = Depends(require_admin)):
+    await db.execute(
+        "UPDATE arxiv_subjects SET is_active = CASE WHEN is_active = 1 THEN 0 ELSE 1 END WHERE id = ?",
+        [subject_id]
+    )
+    return {"status": "toggled"}
 
 
 @router.post("/trigger-fetch")

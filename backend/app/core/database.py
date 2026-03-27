@@ -55,7 +55,8 @@ CREATE TABLE IF NOT EXISTS papers (
     stale_score_weeks INTEGER DEFAULT 0,
     created_at TEXT DEFAULT (datetime('now')),
     last_scored_at TEXT,
-    last_enriched_at TEXT
+    last_enriched_at TEXT,
+    hook_text TEXT
 )
 """
 
@@ -147,6 +148,16 @@ CREATE TABLE IF NOT EXISTS analysis_log (
 )
 """
 
+CREATE_SUBJECTS = """
+CREATE TABLE IF NOT EXISTS arxiv_subjects (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    subject_code TEXT UNIQUE NOT NULL,
+    description TEXT,
+    is_active INTEGER DEFAULT 1,
+    created_at TEXT DEFAULT (datetime('now'))
+)
+"""
+
 # Columns to add if missing (safe migrations)
 ENSURE_COLUMNS = [
     ("papers", "current_score",        "REAL",    "0.0"),
@@ -179,6 +190,7 @@ ENSURE_COLUMNS = [
     ("papers", "hash_id",              "TEXT",    "NULL"),
     ("papers", "last_scored_at",       "TEXT",    "NULL"),
     ("papers", "last_enriched_at",     "TEXT",    "NULL"),
+    ("papers", "hook_text",            "TEXT",    "NULL"),
     # keywords table migrations
     ("keywords", "weight",             "REAL",    "1.0"),
     ("keywords", "category",           "TEXT",    "'general'"),
@@ -207,7 +219,7 @@ async def init_db():
     # 2. Create tables
     for ddl in [CREATE_PAPERS, CREATE_SCORE_HISTORY, CREATE_USERS,
                 CREATE_INTERACTIONS, CREATE_ALERTS, CREATE_CONFIG,
-                CREATE_KEYWORDS, CREATE_ANALYSIS_LOG]:
+                CREATE_KEYWORDS, CREATE_ANALYSIS_LOG, CREATE_SUBJECTS]:
         try:
             await db.execute(ddl)
         except Exception as e:

@@ -102,6 +102,7 @@ Respond with exactly this JSON structure:
   "impact_score": <0.0-1.0, potential research impact>,
   "topic_tags": [<list of 3-5 specific AI topics from the paper>],
   "summary": "<2-sentence plain English summary>",
+  "hook": "<1 punchy scroll-stopping sentence that makes a researcher want to read this — focus on the key finding or breakthrough, mention the technology or method used, reference notable institutions/authors if apparent from the title; write like a tech journalist, not an academic>",
   "is_ai_relevant": <true/false>
 }}"""
 
@@ -117,7 +118,7 @@ Respond with exactly this JSON structure:
                     json={
                         "model": self.model,
                         "messages": [{"role": "user", "content": prompt}],
-                        "max_tokens": 300,
+                        "max_tokens": 500,
                         "temperature": 0.1,
                     }
                 )
@@ -139,6 +140,7 @@ Respond with exactly this JSON structure:
                     "ai_impact_score": float(result.get("impact_score", 0.5)),
                     "ai_topic_tags": result.get("topic_tags", [])[:5],
                     "ai_summary": result.get("summary", ""),
+                    "hook": result.get("hook", ""),
                     "is_ai_relevant": result.get("is_ai_relevant", True)
                 }
 
@@ -153,6 +155,15 @@ Respond with exactly this JSON structure:
 
         kw_score = compute_tfidf_keyword_score(text, all_kws)
 
+        # Simple hook: first non-trivial sentence of abstract
+        hook = ""
+        if abstract:
+            sentences = [s.strip() for s in abstract.replace('\n', ' ').split('.') if len(s.strip()) > 40]
+            if sentences:
+                hook = sentences[0][:160]
+            else:
+                hook = abstract[:160]
+
         # Extract topic tags from keywords found
         found_tags = []
         text_lower = text.lower()
@@ -165,5 +176,6 @@ Respond with exactly this JSON structure:
             "ai_impact_score": kw_score * 0.8,
             "ai_topic_tags": found_tags[:5],
             "ai_summary": abstract[:200] + "..." if abstract and len(abstract) > 200 else abstract or "",
+            "hook": hook,
             "is_ai_relevant": kw_score > 0.1
         }

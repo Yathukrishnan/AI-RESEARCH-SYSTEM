@@ -186,6 +186,7 @@ async def _score_paper(paper: Dict, ai_svc: AIValidationService, keywords: List[
             ai_impact = float(paper.get("ai_impact_score") or 0)
             ai_tags = paper.get("ai_topic_tags") or "[]"
             ai_summary = paper.get("ai_summary") or ""
+            hook_text = paper.get("hook_text") or ""
 
             if ai_relevance == 0:
                 if settings.OPENROUTER_API_KEY:
@@ -204,6 +205,7 @@ async def _score_paper(paper: Dict, ai_svc: AIValidationService, keywords: List[
                 ai_impact = result.get("ai_impact_score", kw_score * 0.8)
                 ai_tags = json.dumps(result.get("ai_topic_tags", []))
                 ai_summary = result.get("ai_summary", "")
+                hook_text = result.get("hook", "")
 
             enriched = dict(paper)
             enriched["ai_relevance_score"] = ai_relevance
@@ -216,11 +218,11 @@ async def _score_paper(paper: Dict, ai_svc: AIValidationService, keywords: List[
                 """UPDATE papers SET
                     current_score = ?, score_type = ?, keyword_score = ?,
                     ai_relevance_score = ?, ai_impact_score = ?,
-                    ai_topic_tags = ?, ai_summary = ?,
+                    ai_topic_tags = ?, ai_summary = ?, hook_text = ?,
                     is_ai_validated = 1, last_scored_at = ?
                 WHERE rowid = ?""",
                 [score, score_type, kw_score, ai_relevance, ai_impact,
-                 ai_tags, ai_summary, now, paper["id"]]
+                 ai_tags, ai_summary, hook_text, now, paper["id"]]
             )
 
             await turso_db.execute(
