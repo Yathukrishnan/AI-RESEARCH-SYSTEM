@@ -56,6 +56,16 @@ async def _weekly_content_transition():
         logger.error(f"Weekly content transition error: {e}")
 
 
+async def _daily_hook_generation():
+    """Generate hooks for any papers still missing them. Runs daily at 03:15 UTC."""
+    try:
+        from app.tasks.paper_tasks import generate_missing_hooks
+        count = await generate_missing_hooks(batch_size=500)
+        logger.info(f"Daily hook generation: {count} hooks generated")
+    except Exception as e:
+        logger.error(f"Daily hook generation error: {e}")
+
+
 def setup_scheduler():
     from app.tasks.paper_tasks import fetch_and_store_papers, rescore_all_papers, enrich_pending_papers
 
@@ -104,10 +114,20 @@ def setup_scheduler():
         misfire_grace_time=3600,
     )
 
+    # Daily hook generation at 03:15 UTC — 45 min after daily fetch so new papers are scored
+    scheduler.add_job(
+        _daily_hook_generation,
+        CronTrigger(hour=3, minute=15, timezone="UTC"),
+        id="daily_hooks",
+        replace_existing=True,
+        coalesce=True,
+        misfire_grace_time=82800,
+    )
+
     logger.info(
         "Scheduler configured: daily_fetch(02:30 UTC / 08:00 IST), "
-        "weekly_rescore(Sun 02:00 UTC), weekly_content_transition(Mon 00:05 UTC), "
-        "enrich_pending(hourly)"
+        "daily_hooks(03:15 UTC), weekly_rescore(Sun 02:00 UTC), "
+        "weekly_content_transition(Mon 00:05 UTC), enrich_pending(hourly)"
     )
 
 

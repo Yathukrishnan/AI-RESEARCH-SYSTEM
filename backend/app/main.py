@@ -197,7 +197,7 @@ async def lifespan(app: FastAPI):
         if hooks_needed > 0:
             logger.info(f"Found {hooks_needed} papers without hooks → generating in background")
             from app.tasks.paper_tasks import generate_missing_hooks
-            asyncio.create_task(generate_missing_hooks(batch_size=200))
+            asyncio.create_task(generate_missing_hooks(batch_size=1000))
         else:
             logger.info("All papers have hooks.")
     except Exception as e:

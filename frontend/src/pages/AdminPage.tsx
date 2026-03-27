@@ -585,11 +585,11 @@ function AnalysisAdmin() {
     }
   }
 
-  const generateHooks = async () => {
+  const generateHooks = async (force: boolean) => {
     setRunning(true)
     try {
-      await adminApi.generateHooks(200)
-      toast.success('Hook generation started! (~200 papers)')
+      await adminApi.generateHooks(500, force)
+      toast.success(force ? 'Regenerating ALL hooks (500 papers)…' : 'Filling missing hooks (500 papers)…')
     } catch {
       toast.error('Failed to start hook generation')
     } finally {
@@ -630,12 +630,20 @@ function AnalysisAdmin() {
             Force Re-score All
           </button>
           <button
-            onClick={generateHooks}
+            onClick={() => generateHooks(false)}
             disabled={running}
             className="flex items-center gap-2 px-4 py-2 bg-purple-500/10 border border-purple-500/30 text-purple-400 text-sm font-medium rounded-xl hover:bg-purple-500/20 disabled:opacity-50 transition-all"
           >
             {running ? <Loader2 size={14} className="animate-spin" /> : <span>✦</span>}
-            Generate Hooks (200 papers)
+            Fill Missing Hooks
+          </button>
+          <button
+            onClick={() => generateHooks(true)}
+            disabled={running}
+            className="flex items-center gap-2 px-4 py-2 bg-pink-500/10 border border-pink-500/30 text-pink-400 text-sm font-medium rounded-xl hover:bg-pink-500/20 disabled:opacity-50 transition-all"
+          >
+            {running ? <Loader2 size={14} className="animate-spin" /> : <span>↺</span>}
+            Regenerate ALL Hooks
           </button>
         </div>
       </div>

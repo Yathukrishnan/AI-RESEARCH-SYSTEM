@@ -398,11 +398,19 @@ async def fetch_and_store_papers(days: int = 1):
         )
 
 
-async def generate_missing_hooks(batch_size: int = 200) -> int:
+async def generate_missing_hooks(batch_size: int = 500, force: bool = False) -> int:
     """
-    Generate hook_text for papers that don't have one yet.
-    Runs at startup and can be triggered manually via admin API.
+    Generate hook_text for papers.
+    force=True: reset ALL existing hooks and regenerate (use new prompt style).
+    force=False: only fill papers where hook_text is NULL/empty.
     """
+    if force:
+        # Wipe all existing hooks so everything gets regenerated with current prompt
+        await turso_db.execute(
+            "UPDATE papers SET hook_text = NULL WHERE is_deleted = 0 AND is_duplicate = 0"
+        )
+        logger.info("Hook gen: wiped all existing hooks — regenerating all…")
+
     rows = await turso_db.fetchall(
         "SELECT rowid as id, title, abstract FROM papers "
         "WHERE (hook_text IS NULL OR hook_text = '') "
@@ -412,13 +420,12 @@ async def generate_missing_hooks(batch_size: int = 200) -> int:
         [batch_size]
     )
     if not rows:
-        logger.info("Hook gen: no papers missing hooks.")
+        logger.info("Hook gen: no papers need hooks.")
         return 0
 
-    logger.info(f"Hook gen: generating hooks for {len(rows)} papers…")
+    logger.info(f"Hook gen: generating for {len(rows)} papers (force={force})…")
     ai_svc = AIValidationService(settings.OPENROUTER_API_KEY)
     semaphore = asyncio.Semaphore(5)
-    count = 0
 
     async def _gen(paper):
         async with semaphore:
@@ -437,10 +444,9 @@ async def generate_missing_hooks(batch_size: int = 200) -> int:
                 logger.error(f"Hook gen error paper {paper.get('id')}: {e}")
             return False
 
-    tasks = [_gen(p) for p in rows]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
+    results = await asyncio.gather(*[_gen(p) for p in rows], return_exceptions=True)
     count = sum(1 for r in results if r is True)
-    logger.info(f"Hook gen: generated {count}/{len(rows)} hooks")
+    logger.info(f"Hook gen: done — {count}/{len(rows)} hooks generated")
     return count
 
 

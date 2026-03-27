@@ -98,13 +98,18 @@ async def run_analysis(
 @router.post("/hooks/generate")
 async def generate_hooks(
     background_tasks: BackgroundTasks,
-    batch_size: int = 200,
+    batch_size: int = 500,
+    force: bool = False,
     _: dict = Depends(require_admin)
 ):
-    """Generate hook_text for papers missing it. Run this after initial data load."""
+    """
+    Generate hook_text for papers.
+    force=true: wipe all existing hooks and regenerate with current prompt style.
+    force=false: only fill papers where hook_text is NULL.
+    """
     from app.tasks.paper_tasks import generate_missing_hooks
-    background_tasks.add_task(generate_missing_hooks, batch_size)
-    return {"status": "started", "batch_size": batch_size}
+    background_tasks.add_task(generate_missing_hooks, batch_size, force)
+    return {"status": "started", "batch_size": batch_size, "force": force}
 
 
 @router.get("/papers")
