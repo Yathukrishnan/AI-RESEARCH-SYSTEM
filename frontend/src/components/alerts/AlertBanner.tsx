@@ -19,16 +19,6 @@ function alertStyle(type: string) {
   }
 }
 
-// Map alert type → feed filter param if navigate_to not provided
-function inferFilter(type: string): string {
-  switch (type) {
-    case 'trending':    return 'trending'
-    case 'high_growth': return 'trending'
-    case 'hidden_gems': return 'gems'
-    case 'new_papers':  return 'new'
-    default:            return 'all'
-  }
-}
 
 export function AlertBanner({ alerts }: Props) {
   const [dismissed, setDismissed] = useState<Set<number>>(new Set())
@@ -41,8 +31,11 @@ export function AlertBanner({ alerts }: Props) {
   const cur = visible[current % visible.length]
 
   const handleClick = () => {
-    const filter = cur.navigate_to ?? inferFilter(cur.type ?? '')
-    navigate(`/?filter=${filter}`)
+    if (cur.paper_id) {
+      navigate(`/paper/${cur.paper_id}`)
+    } else {
+      navigate('/')
+    }
   }
 
   const prev = (e: React.MouseEvent) => { e.stopPropagation(); setCurrent((c) => (c - 1 + visible.length) % visible.length) }
