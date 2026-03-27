@@ -22,13 +22,21 @@ logger = logging.getLogger(__name__)
 
 async def seed_defaults():
     """Seed admin user, config, and keywords on first run (fully idempotent)."""
-    # Admin user – INSERT OR IGNORE so it's safe even if row exists with different schema
+    # Admin user – insert if missing, then always sync password+role from env.
+    # This fixes "invalid credentials" when ADMIN_PASSWORD env var was changed
+    # after the initial seed (INSERT OR IGNORE would leave the stale hash).
     try:
+        hashed = hash_password(settings.ADMIN_PASSWORD)
         await turso_db.execute(
             "INSERT OR IGNORE INTO users (email, username, hashed_password, role) VALUES (?, ?, ?, 'admin')",
-            [settings.ADMIN_EMAIL, "admin", hash_password(settings.ADMIN_PASSWORD)]
+            [settings.ADMIN_EMAIL, "admin", hashed]
         )
-        logger.info(f"Admin user seeded (or already exists): {settings.ADMIN_EMAIL}")
+        # Always overwrite – ensures env var changes take effect immediately
+        await turso_db.execute(
+            "UPDATE users SET hashed_password = ?, role = 'admin', is_active = 1 WHERE email = ?",
+            [hashed, settings.ADMIN_EMAIL]
+        )
+        logger.info(f"Admin user ready: {settings.ADMIN_EMAIL}")
     except Exception as e:
         logger.warning(f"Could not seed admin user (skipping): {e}")
 

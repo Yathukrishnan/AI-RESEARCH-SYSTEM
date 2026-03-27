@@ -18,7 +18,10 @@ class RegisterRequest(BaseModel):
 
 @router.post("/login")
 async def login(req: LoginRequest, db: TursoClient = Depends(get_db)):
-    user = await db.fetchone("SELECT * FROM users WHERE email = ?", [req.email])
+    user = await db.fetchone(
+        "SELECT id, email, username, hashed_password, role, is_active FROM users WHERE email = ?",
+        [req.email]
+    )
     if not user or not verify_password(req.password, user["hashed_password"]):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     if not user.get("is_active", 1):
@@ -26,6 +29,21 @@ async def login(req: LoginRequest, db: TursoClient = Depends(get_db)):
     await db.execute("UPDATE users SET last_login = ? WHERE id = ?", [datetime.utcnow().isoformat(), user["id"]])
     token = create_access_token({"sub": str(user["id"]), "role": user["role"], "email": user["email"]})
     return {"access_token": token, "token_type": "bearer", "role": user["role"]}
+
+@router.post("/reset-admin-password")
+async def reset_admin_password(db: TursoClient = Depends(get_db)):
+    """
+    Emergency endpoint — resets admin password from ADMIN_PASSWORD env var.
+    Safe to call any time: just re-syncs the hash from env.
+    """
+    from app.core.config import settings
+    hashed = hash_password(settings.ADMIN_PASSWORD)
+    await db.execute(
+        "UPDATE users SET hashed_password = ?, role = 'admin', is_active = 1 WHERE email = ?",
+        [hashed, settings.ADMIN_EMAIL]
+    )
+    return {"status": "ok", "email": settings.ADMIN_EMAIL}
+
 
 @router.post("/register")
 async def register(req: RegisterRequest, db: TursoClient = Depends(get_db)):
@@ -36,6 +54,9 @@ async def register(req: RegisterRequest, db: TursoClient = Depends(get_db)):
         "INSERT INTO users (email, username, hashed_password, role) VALUES (?, ?, ?, 'user')",
         [req.email, req.username, hash_password(req.password)]
     )
-    user = await db.fetchone("SELECT * FROM users WHERE email = ?", [req.email])
+    user = await db.fetchone(
+        "SELECT id, email, role FROM users WHERE email = ?",
+        [req.email]
+    )
     token = create_access_token({"sub": str(user["id"]), "role": "user", "email": req.email})
     return {"access_token": token, "token_type": "bearer", "role": "user"}
