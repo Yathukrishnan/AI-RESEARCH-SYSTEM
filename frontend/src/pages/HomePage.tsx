@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Navbar } from '@/components/layout/Navbar'
 import { Feed } from '@/components/feed/Feed'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -36,9 +37,26 @@ function StatChip({
 }
 
 export function HomePage() {
+  const [searchParams, setSearchParams] = useSearchParams()
   const [stats, setStats] = useState<Stats | null>(null)
   const [polling, setPolling] = useState(false)
-  const [activeFilter, setActiveFilter] = useState<'all' | 'trending' | 'gems' | 'new'>('all')
+
+  const validFilters = ['all', 'trending', 'gems', 'new'] as const
+  type Filter = typeof validFilters[number]
+  const paramFilter = searchParams.get('filter') as Filter | null
+  const [activeFilter, setActiveFilter] = useState<Filter>(
+    validFilters.includes(paramFilter as Filter) ? (paramFilter as Filter) : 'all'
+  )
+
+  // Sync filter tab when URL param changes (e.g. alert click navigates here)
+  useEffect(() => {
+    const f = searchParams.get('filter') as Filter | null
+    if (f && validFilters.includes(f)) {
+      setActiveFilter(f)
+      // Clear the param so browser back button works naturally
+      setSearchParams({}, { replace: true })
+    }
+  }, [searchParams])
 
   const fetchStats = async () => {
     try {

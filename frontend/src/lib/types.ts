@@ -86,6 +86,7 @@ export interface Alert {
   title: string
   message: string
   paper_id?: number
+  navigate_to?: 'trending' | 'gems' | 'new' | 'all'
   created_at?: string
 }
 

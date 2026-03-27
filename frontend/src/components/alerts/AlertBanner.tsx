@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, ChevronLeft, ChevronRight } from 'lucide-react'
+import { X, ChevronLeft, ChevronRight, ArrowRight } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { Alert } from '@/lib/types'
 import { cn } from '@/lib/utils'
@@ -19,6 +19,17 @@ function alertStyle(type: string) {
   }
 }
 
+// Map alert type → feed filter param if navigate_to not provided
+function inferFilter(type: string): string {
+  switch (type) {
+    case 'trending':    return 'trending'
+    case 'high_growth': return 'trending'
+    case 'hidden_gems': return 'gems'
+    case 'new_papers':  return 'new'
+    default:            return 'all'
+  }
+}
+
 export function AlertBanner({ alerts }: Props) {
   const [dismissed, setDismissed] = useState<Set<number>>(new Set())
   const [current, setCurrent] = useState(0)
@@ -30,12 +41,10 @@ export function AlertBanner({ alerts }: Props) {
   const cur = visible[current % visible.length]
 
   const handleClick = () => {
-    if (cur.type === 'new_papers') {
-      navigate('/')
-    } else if (cur.paper_id) {
-      navigate(`/paper/${cur.paper_id}`)
-    }
+    const filter = cur.navigate_to ?? inferFilter(cur.type ?? '')
+    navigate(`/?filter=${filter}`)
   }
+
   const prev = (e: React.MouseEvent) => { e.stopPropagation(); setCurrent((c) => (c - 1 + visible.length) % visible.length) }
   const next = (e: React.MouseEvent) => { e.stopPropagation(); setCurrent((c) => (c + 1) % visible.length) }
   const dismiss = (e: React.MouseEvent) => {
@@ -53,7 +62,7 @@ export function AlertBanner({ alerts }: Props) {
         exit={{ opacity: 0, y: -14 }}
         transition={{ duration: 0.28 }}
         className={cn(
-          'w-full rounded-xl px-4 py-3 border flex items-center gap-3 cursor-pointer',
+          'w-full rounded-xl px-4 py-3 border flex items-center gap-3 cursor-pointer group',
           alertStyle(cur.type ?? '')
         )}
         onClick={handleClick}
@@ -61,9 +70,15 @@ export function AlertBanner({ alerts }: Props) {
         <span className="text-xl shrink-0">{cur.emoji}</span>
 
         <div className="flex-1 min-w-0">
-          <p className="text-sm text-white font-semibold leading-tight truncate">{cur.title}</p>
-          {cur.message && cur.message !== cur.title && (
-            <p className="text-xs text-slate-400/80 mt-0.5 truncate">{cur.message}</p>
+          {/* Hook as the main headline */}
+          <p className="text-sm text-white font-bold leading-tight line-clamp-1 group-hover:text-white/90 transition-colors">
+            {cur.title}
+          </p>
+          {cur.message && (
+            <p className="text-[11px] text-slate-400/80 mt-0.5 flex items-center gap-1">
+              {cur.message}
+              <ArrowRight size={10} className="inline opacity-50" />
+            </p>
           )}
         </div>
 

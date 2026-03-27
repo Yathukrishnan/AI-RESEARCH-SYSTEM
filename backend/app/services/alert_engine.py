@@ -1,76 +1,104 @@
+import json
 import logging
+import random
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict
 from app.core.turso import TursoClient
-from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+def _hook_or_title(paper: Dict, max_len: int = 90) -> str:
+    """Return hook_text if present, else trimmed title."""
+    hook = (paper.get("hook_text") or "").strip()
+    if hook:
+        return hook[:max_len]
+    title = (paper.get("title") or "").strip()
+    if len(title) <= max_len:
+        return title
+    return title[:max_len - 1].rsplit(" ", 1)[0] + "…"
+
 
 async def generate_alerts(db: TursoClient) -> List[Dict]:
     alerts = []
 
-    trending_count_row = await db.fetchone("SELECT COUNT(*) as cnt FROM papers WHERE is_trending = 1 AND is_deleted = 0")
-    trending_count = int(trending_count_row["cnt"]) if trending_count_row else 0
-
-    if trending_count > 0:
-        top = await db.fetchone("SELECT rowid as id, ai_topic_tags FROM papers WHERE is_trending = 1 AND is_deleted = 0 ORDER BY scr_value DESC")
-        tags = "AI/ML"
-        if top and top.get("ai_topic_tags"):
-            import json
-            try:
-                tag_list = json.loads(top["ai_topic_tags"])
-                if tag_list: tags = tag_list[0]
-            except: pass
-        alerts.append({
-            "type": "trending", "emoji": "🚀",
-            "title": f"{trending_count} papers trending in {tags} today",
-            "message": f"🚀 {trending_count} papers are trending in {tags}",
-            "paper_id": top["id"] if top else None
-        })
-
-    growth = await db.fetchone(
-        "SELECT rowid as id, title, current_score, previous_score FROM papers WHERE previous_score > 0 AND current_score > previous_score AND is_deleted = 0 ORDER BY (current_score - previous_score) DESC"
+    # ── 1. Trending papers ────────────────────────────────────────────────
+    trending_papers = await db.fetchall(
+        "SELECT rowid as id, title, hook_text FROM papers "
+        "WHERE is_trending = 1 AND is_deleted = 0 "
+        "ORDER BY normalized_score DESC LIMIT 5"
     )
-    if growth:
-        prev = float(growth.get("previous_score") or 0.001)
-        curr = float(growth.get("current_score") or 0)
-        pct = int((curr - prev) / prev * 100)
-        if pct > 20:
-            title_text = str(growth.get("title", ""))[:60]
+    if trending_papers:
+        # Pick up to 2 random trending papers as individual alerts
+        picks = random.sample(trending_papers, min(2, len(trending_papers)))
+        for p in picks:
             alerts.append({
-                "type": "high_growth", "emoji": "📈",
-                "title": f"Paper grew +{pct}% this week",
-                "message": f"📈 '{title_text}...' grew +{pct}% this week",
-                "paper_id": growth["id"]
+                "type": "trending",
+                "emoji": "🔥",
+                "title": _hook_or_title(p),
+                "message": "Trending now · tap to explore",
+                "paper_id": p["id"],
+                "navigate_to": "trending",
             })
 
-    since = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
-    new_count_row = await db.fetchone("SELECT COUNT(*) as cnt FROM papers WHERE created_at > ? AND is_deleted = 0", [since])
-    new_count = int(new_count_row["cnt"]) if new_count_row else 0
-    if new_count > 3:
-        top_new = await db.fetchone(
-            "SELECT rowid as id FROM papers WHERE created_at > ? AND is_deleted = 0 "
-            "ORDER BY COALESCE(normalized_score, keyword_score, 0) DESC LIMIT 1", [since]
-        )
-        alerts.append({
-            "type": "new_papers", "emoji": "✨",
-            "title": f"{new_count} new AI papers added today",
-            "message": f"✨ {new_count} new research papers added in the last 24h — tap to see the top pick",
-            "paper_id": top_new["id"] if top_new else None
-        })
-
-    top_gem = await db.fetchone(
-        "SELECT rowid as id FROM papers WHERE normalized_score > 0.6 AND view_count < 20 AND is_deleted = 0 "
-        "ORDER BY normalized_score DESC LIMIT 1"
+    # ── 2. Fast-rising (high score growth) ───────────────────────────────
+    rising_papers = await db.fetchall(
+        "SELECT rowid as id, title, hook_text, current_score, previous_score FROM papers "
+        "WHERE previous_score > 0 AND current_score > previous_score "
+        "AND is_deleted = 0 ORDER BY (current_score - previous_score) DESC LIMIT 5"
     )
-    gems_row = await db.fetchone("SELECT COUNT(*) as cnt FROM papers WHERE normalized_score > 0.6 AND view_count < 20 AND is_deleted = 0")
-    gems = int(gems_row["cnt"]) if gems_row else 0
-    if gems > 0:
+    for p in rising_papers[:1]:
+        prev = float(p.get("previous_score") or 0.001)
+        curr = float(p.get("current_score") or 0)
+        pct = int((curr - prev) / prev * 100)
+        if pct > 20:
+            alerts.append({
+                "type": "high_growth",
+                "emoji": "📈",
+                "title": _hook_or_title(p),
+                "message": f"Rising +{pct}% · tap to see what's climbing",
+                "paper_id": p["id"],
+                "navigate_to": "trending",
+            })
+
+    # ── 3. New papers (last 24 h) ─────────────────────────────────────────
+    since = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    new_papers = await db.fetchall(
+        "SELECT rowid as id, title, hook_text FROM papers "
+        "WHERE created_at > ? AND is_deleted = 0 "
+        "ORDER BY COALESCE(normalized_score, keyword_score, 0) DESC LIMIT 5",
+        [since]
+    )
+    if len(new_papers) > 3:
+        # Pick 1-2 top new papers as hooks
+        picks = new_papers[:2]
+        for p in picks:
+            alerts.append({
+                "type": "new_papers",
+                "emoji": "✨",
+                "title": _hook_or_title(p),
+                "message": f"Just added · {len(new_papers)} new papers today",
+                "paper_id": p["id"],
+                "navigate_to": "new",
+            })
+
+    # ── 4. Hidden gems ────────────────────────────────────────────────────
+    gems = await db.fetchall(
+        "SELECT rowid as id, title, hook_text FROM papers "
+        "WHERE normalized_score > 0.6 AND view_count < 20 AND is_deleted = 0 "
+        "ORDER BY normalized_score DESC LIMIT 10"
+    )
+    if gems:
+        # Pick 1 random gem so it feels fresh each load
+        p = random.choice(gems)
         alerts.append({
-            "type": "hidden_gems", "emoji": "💎",
-            "title": f"{gems} hidden gems waiting to be discovered",
-            "message": f"💎 {gems} high-quality papers with low views — tap to explore the best one",
-            "paper_id": top_gem["id"] if top_gem else None
+            "type": "hidden_gems",
+            "emoji": "💎",
+            "title": _hook_or_title(p),
+            "message": "Hidden gem · high score, barely seen",
+            "paper_id": p["id"],
+            "navigate_to": "gems",
         })
 
+    # Return up to 5, shuffled so order feels fresh
+    random.shuffle(alerts)
     return alerts[:5]
