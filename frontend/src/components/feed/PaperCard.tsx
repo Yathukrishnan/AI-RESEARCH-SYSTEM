@@ -156,7 +156,7 @@ export function PaperCard({ paper, index = 0, sectionType }: Props) {
       <div className="flex-1">
         {(paper as any).hook_text ? (
           <div className="flex flex-col gap-1.5">
-            <p className="text-[15px] font-bold text-white leading-snug line-clamp-3 group-hover:text-accent-2 transition-colors tracking-tight">
+            <p className="text-[15px] font-bold text-white leading-snug line-clamp-2 group-hover:text-accent-2 transition-colors tracking-tight">
               {(paper as any).hook_text}
             </p>
             <p className="text-[10px] text-slate-600 font-mono line-clamp-1 leading-tight">
@@ -165,7 +165,7 @@ export function PaperCard({ paper, index = 0, sectionType }: Props) {
           </div>
         ) : paper.ai_summary ? (
           <div className="flex flex-col gap-1.5">
-            <p className="text-[15px] font-bold text-white leading-snug line-clamp-3 group-hover:text-accent-2 transition-colors tracking-tight">
+            <p className="text-[15px] font-bold text-white leading-snug line-clamp-2 group-hover:text-accent-2 transition-colors tracking-tight">
               {truncate(paper.ai_summary, 160)}
             </p>
             <p className="text-[10px] text-slate-600 font-mono line-clamp-1 leading-tight">
@@ -174,7 +174,7 @@ export function PaperCard({ paper, index = 0, sectionType }: Props) {
           </div>
         ) : (
           <div className="flex flex-col gap-1.5">
-            <h3 className="text-[15px] font-bold text-white leading-snug line-clamp-3 group-hover:text-accent-2 transition-colors tracking-tight">
+            <h3 className="text-[15px] font-bold text-white leading-snug line-clamp-2 group-hover:text-accent-2 transition-colors tracking-tight">
               {paper.title}
             </h3>
             {paper.abstract && (

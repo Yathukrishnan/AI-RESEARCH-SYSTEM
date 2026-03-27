@@ -102,7 +102,7 @@ Respond with exactly this JSON structure:
   "impact_score": <0.0-1.0, potential research impact>,
   "topic_tags": [<list of 3-5 specific AI topics from the paper>],
   "summary": "<2-sentence plain English summary>",
-  "hook": "<1 punchy scroll-stopping sentence that makes a researcher want to read this — focus on the key finding or breakthrough, mention the technology or method used, reference notable institutions/authors if apparent from the title; write like a tech journalist, not an academic>",
+  "hook": "<short punchy headline, max 70 chars, like a viral tweet — pick ONE of: key finding, specific number/stat, tech/model name, or author/institution — e.g. 'GPT-4 level reasoning at 1% the cost' or 'Meta's new model writes code faster than humans' — NO 'This paper' or academic phrasing>",
   "is_ai_relevant": <true/false>
 }}"""
 
@@ -153,25 +153,25 @@ Respond with exactly this JSON structure:
         if not self._api_key:
             return self._make_fallback_hook(title, abstract)
 
-        prompt = f"""Write ONE punchy, scroll-stopping sentence about this AI/ML research paper.
+        prompt = f"""Write a SHORT punchy headline for this AI/ML research paper. Like a viral tweet — 5 to 10 words max.
 
-Title: {title[:300]}
-Abstract: {abstract[:600]}
+Title: {title[:250]}
+Abstract: {abstract[:500]}
 
 Rules:
-- Write like a viral tech tweet or YouTube title, NOT like an academic
-- Focus on the KEY finding, breakthrough, or surprising result
-- Mention the technology/method used
-- Make researchers want to click immediately
-- Max 120 characters
-- No quotes around the text
-- NO "Researchers found that..." or "This paper presents..."
+- 5–10 words only, strict
+- Pick ONE angle: a specific number/stat, the tech/model name, the key finding, or a famous lab/author
+- Sound exciting, not academic
+- No "This paper", no "Researchers found", no full sentences with "that"
 - Good examples:
-  "New model beats GPT-4 on reasoning using 10x less compute"
-  "MIT's trick makes LLMs forget specific knowledge on demand"
-  "Tiny 7B model just matched Claude 3.5 on coding benchmarks"
+  "GPT-4 level reasoning at 1% the cost"
+  "Meta's model now writes code faster than humans"
+  "Stanford's trick: make any LLM forget on command"
+  "LoRA fine-tuning just got 10x faster"
+  "Mamba beats Transformers on long sequences"
+  "MIT solves LLM hallucination with one weird trick"
 
-Respond with ONLY the hook sentence, nothing else."""
+Respond with ONLY the headline, nothing else. No quotes."""
 
         try:
             async with httpx.AsyncClient(timeout=20) as client:
@@ -184,27 +184,28 @@ Respond with ONLY the hook sentence, nothing else."""
                     json={
                         "model": self.model,
                         "messages": [{"role": "user", "content": prompt}],
-                        "max_tokens": 150,
-                        "temperature": 0.7,
+                        "max_tokens": 60,
+                        "temperature": 0.8,
                     }
                 )
                 if resp.status_code == 200:
                     content = resp.json()["choices"][0]["message"]["content"].strip()
                     content = content.strip('"\'').strip()
                     if content:
-                        return content[:200]
+                        return content[:100]
         except Exception as e:
             logger.warning(f"Hook generation error: {e}")
 
         return self._make_fallback_hook(title, abstract)
 
     def _make_fallback_hook(self, title: str, abstract: str) -> str:
-        """Extract first compelling sentence from abstract as fallback hook."""
-        if abstract:
-            sentences = [s.strip() for s in abstract.replace('\n', ' ').split('.') if len(s.strip()) > 40]
-            if sentences:
-                return sentences[0][:160]
-        return title[:160]
+        """Short fallback hook from title (truncated to feel punchy)."""
+        # Trim title to ~70 chars at a word boundary
+        t = title.strip()
+        if len(t) <= 72:
+            return t
+        cut = t[:70].rsplit(' ', 1)[0]
+        return cut + '…'
 
     def _tfidf_fallback(self, title: str, abstract: str, keywords: List[str]) -> Dict:
         """Fallback to TF-IDF when AI is unavailable."""
@@ -213,14 +214,8 @@ Respond with ONLY the hook sentence, nothing else."""
 
         kw_score = compute_tfidf_keyword_score(text, all_kws)
 
-        # Simple hook: first non-trivial sentence of abstract
-        hook = ""
-        if abstract:
-            sentences = [s.strip() for s in abstract.replace('\n', ' ').split('.') if len(s.strip()) > 40]
-            if sentences:
-                hook = sentences[0][:160]
-            else:
-                hook = abstract[:160]
+        # Short fallback hook: trimmed title
+        hook = self._make_fallback_hook(title, abstract)
 
         # Extract topic tags from keywords found
         found_tags = []
