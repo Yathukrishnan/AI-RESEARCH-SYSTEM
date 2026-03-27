@@ -585,6 +585,18 @@ function AnalysisAdmin() {
     }
   }
 
+  const generateHooks = async () => {
+    setRunning(true)
+    try {
+      await adminApi.generateHooks(200)
+      toast.success('Hook generation started! (~200 papers)')
+    } catch {
+      toast.error('Failed to start hook generation')
+    } finally {
+      setRunning(false)
+    }
+  }
+
   const statusColor = (s?: string) => {
     if (s === 'complete') return 'text-success'
     if (s === 'running') return 'text-accent-2'
@@ -616,6 +628,14 @@ function AnalysisAdmin() {
           >
             {running ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
             Force Re-score All
+          </button>
+          <button
+            onClick={generateHooks}
+            disabled={running}
+            className="flex items-center gap-2 px-4 py-2 bg-purple-500/10 border border-purple-500/30 text-purple-400 text-sm font-medium rounded-xl hover:bg-purple-500/20 disabled:opacity-50 transition-all"
+          >
+            {running ? <Loader2 size={14} className="animate-spin" /> : <span>✦</span>}
+            Generate Hooks (200 papers)
           </button>
         </div>
       </div>

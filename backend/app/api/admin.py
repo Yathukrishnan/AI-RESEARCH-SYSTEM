@@ -95,6 +95,18 @@ async def run_analysis(
     return {"status": "started", "force_rescore": force}
 
 
+@router.post("/hooks/generate")
+async def generate_hooks(
+    background_tasks: BackgroundTasks,
+    batch_size: int = 200,
+    _: dict = Depends(require_admin)
+):
+    """Generate hook_text for papers missing it. Run this after initial data load."""
+    from app.tasks.paper_tasks import generate_missing_hooks
+    background_tasks.add_task(generate_missing_hooks, batch_size)
+    return {"status": "started", "batch_size": batch_size}
+
+
 @router.get("/papers")
 async def list_papers(
     page: int = 0, limit: int = 20, sort_by: str = "normalized_score",

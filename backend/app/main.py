@@ -188,6 +188,21 @@ async def lifespan(app: FastAPI):
         else:
             logger.info("All papers scored. System ready.")
 
+    # 7. Generate missing hooks in background (for existing papers without hook_text)
+    try:
+        hooks_needed = await turso_db.count(
+            "papers",
+            "is_deleted = 0 AND is_duplicate = 0 AND (hook_text IS NULL OR hook_text = '')"
+        )
+        if hooks_needed > 0:
+            logger.info(f"Found {hooks_needed} papers without hooks → generating in background")
+            from app.tasks.paper_tasks import generate_missing_hooks
+            asyncio.create_task(generate_missing_hooks(batch_size=200))
+        else:
+            logger.info("All papers have hooks.")
+    except Exception as e:
+        logger.warning(f"Hook generation startup check failed (non-fatal): {e}")
+
     logger.info("Startup complete.")
     yield
 

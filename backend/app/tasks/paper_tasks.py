@@ -398,6 +398,52 @@ async def fetch_and_store_papers(days: int = 1):
         )
 
 
+async def generate_missing_hooks(batch_size: int = 200) -> int:
+    """
+    Generate hook_text for papers that don't have one yet.
+    Runs at startup and can be triggered manually via admin API.
+    """
+    rows = await turso_db.fetchall(
+        "SELECT rowid as id, title, abstract FROM papers "
+        "WHERE (hook_text IS NULL OR hook_text = '') "
+        "AND is_deleted = 0 AND is_duplicate = 0 "
+        "ORDER BY normalized_score DESC "
+        "LIMIT ?",
+        [batch_size]
+    )
+    if not rows:
+        logger.info("Hook gen: no papers missing hooks.")
+        return 0
+
+    logger.info(f"Hook gen: generating hooks for {len(rows)} papers…")
+    ai_svc = AIValidationService(settings.OPENROUTER_API_KEY)
+    semaphore = asyncio.Semaphore(5)
+    count = 0
+
+    async def _gen(paper):
+        async with semaphore:
+            try:
+                hook = await ai_svc.generate_hook_only(
+                    paper.get("title", ""),
+                    paper.get("abstract", "")
+                )
+                if hook:
+                    await turso_db.execute(
+                        "UPDATE papers SET hook_text = ? WHERE rowid = ?",
+                        [hook, paper["id"]]
+                    )
+                    return True
+            except Exception as e:
+                logger.error(f"Hook gen error paper {paper.get('id')}: {e}")
+            return False
+
+    tasks = [_gen(p) for p in rows]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    count = sum(1 for r in results if r is True)
+    logger.info(f"Hook gen: generated {count}/{len(rows)} hooks")
+    return count
+
+
 async def process_single_paper(arxiv_id: str):
     paper_data = await fetch_single_paper(arxiv_id)
     if not paper_data:

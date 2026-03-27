@@ -148,6 +148,64 @@ Respond with exactly this JSON structure:
             logger.warning(f"AI validation error: {e}")
             return self._tfidf_fallback(title, abstract, keywords)
 
+    async def generate_hook_only(self, title: str, abstract: str) -> str:
+        """Generate just a punchy hook/headline for a paper. Cheaper than full validation."""
+        if not self._api_key:
+            return self._make_fallback_hook(title, abstract)
+
+        prompt = f"""Write ONE punchy, scroll-stopping sentence about this AI/ML research paper.
+
+Title: {title[:300]}
+Abstract: {abstract[:600]}
+
+Rules:
+- Write like a viral tech tweet or YouTube title, NOT like an academic
+- Focus on the KEY finding, breakthrough, or surprising result
+- Mention the technology/method used
+- Make researchers want to click immediately
+- Max 120 characters
+- No quotes around the text
+- NO "Researchers found that..." or "This paper presents..."
+- Good examples:
+  "New model beats GPT-4 on reasoning using 10x less compute"
+  "MIT's trick makes LLMs forget specific knowledge on demand"
+  "Tiny 7B model just matched Claude 3.5 on coding benchmarks"
+
+Respond with ONLY the hook sentence, nothing else."""
+
+        try:
+            async with httpx.AsyncClient(timeout=20) as client:
+                resp = await client.post(
+                    f"{self.base_url}/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {self._api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": self.model,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "max_tokens": 150,
+                        "temperature": 0.7,
+                    }
+                )
+                if resp.status_code == 200:
+                    content = resp.json()["choices"][0]["message"]["content"].strip()
+                    content = content.strip('"\'').strip()
+                    if content:
+                        return content[:200]
+        except Exception as e:
+            logger.warning(f"Hook generation error: {e}")
+
+        return self._make_fallback_hook(title, abstract)
+
+    def _make_fallback_hook(self, title: str, abstract: str) -> str:
+        """Extract first compelling sentence from abstract as fallback hook."""
+        if abstract:
+            sentences = [s.strip() for s in abstract.replace('\n', ' ').split('.') if len(s.strip()) > 40]
+            if sentences:
+                return sentences[0][:160]
+        return title[:160]
+
     def _tfidf_fallback(self, title: str, abstract: str, keywords: List[str]) -> Dict:
         """Fallback to TF-IDF when AI is unavailable."""
         all_kws = keywords if keywords else AI_KEYWORDS

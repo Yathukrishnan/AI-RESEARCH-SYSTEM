@@ -73,6 +73,7 @@ export const adminApi = {
     api.post('/admin/subjects', { subject_code, description }),
   deleteSubject: (id: number) => api.delete(`/admin/subjects/${id}`),
   toggleSubject: (id: number) => api.patch(`/admin/subjects/${id}/toggle`),
+  generateHooks: (batch = 200) => api.post(`/admin/hooks/generate?batch_size=${batch}`),
   triggerFetch: (days = 1) => api.post(`/admin/trigger-fetch?days=${days}`),
   triggerRescore: () => api.post('/admin/trigger-rescore'),
   triggerEnrich: (batch = 50) => api.post(`/admin/trigger-enrich?batch=${batch}`),

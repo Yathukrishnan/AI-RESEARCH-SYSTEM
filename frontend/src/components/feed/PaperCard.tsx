@@ -16,10 +16,10 @@ type SectionType = FeedSection['section_type']
 
 function cardClass(sectionType?: SectionType) {
   switch (sectionType) {
-    case 'trending':    return 'paper-card-trending'
-    case 'rising':      return 'paper-card-rising'
-    case 'hidden_gems': return 'paper-card-hidden'
-    case 'you_missed':  return 'paper-card-missed'
+    case 'trending':    return 'paper-card-trending border-l-2 border-l-orange-500/60'
+    case 'rising':      return 'paper-card-rising border-l-2 border-l-green-500/60'
+    case 'hidden_gems': return 'paper-card-hidden border-l-2 border-l-purple-500/60'
+    case 'you_missed':  return 'paper-card-missed border-l-2 border-l-amber-500/60'
     default:            return ''
   }
 }
@@ -126,7 +126,7 @@ export function PaperCard({ paper, index = 0, sectionType }: Props) {
       )}
       onClick={handleView}
     >
-      {/* Row 1: categories + badge */}
+      {/* Row 1: categories + badges */}
       <div className="flex items-start justify-between gap-2">
         <div className="flex flex-wrap gap-1.5 flex-1 min-w-0">
           {paper.categories.slice(0, 2).map((cat) => (
@@ -139,6 +139,11 @@ export function PaperCard({ paper, index = 0, sectionType }: Props) {
               ✦ New
             </span>
           )}
+          {(paper as any).hook_text && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-accent/10 text-accent-2/60 border border-accent/15 font-mono shrink-0">
+              AI Pick
+            </span>
+          )}
         </div>
         {paper.trend_label && (
           <div className="shrink-0">
@@ -147,35 +152,37 @@ export function PaperCard({ paper, index = 0, sectionType }: Props) {
         )}
       </div>
 
-      {/* Row 2: Hook (primary) or title fallback */}
+      {/* Row 2: Hook headline (YouTube-style) */}
       <div className="flex-1">
         {(paper as any).hook_text ? (
-          <>
-            <p className="text-sm font-semibold text-white leading-snug line-clamp-2 group-hover:text-accent-2 transition-colors mb-1.5">
+          <div className="flex flex-col gap-1.5">
+            <p className="text-[15px] font-bold text-white leading-snug line-clamp-3 group-hover:text-accent-2 transition-colors tracking-tight">
               {(paper as any).hook_text}
             </p>
-            <p className="text-xs text-slate-500 leading-tight line-clamp-1 italic">
-              {truncate(paper.title, 100)}
+            <p className="text-[10px] text-slate-600 font-mono line-clamp-1 leading-tight">
+              ↳ {truncate(paper.title, 85)}
             </p>
-          </>
+          </div>
+        ) : paper.ai_summary ? (
+          <div className="flex flex-col gap-1.5">
+            <p className="text-[15px] font-bold text-white leading-snug line-clamp-3 group-hover:text-accent-2 transition-colors tracking-tight">
+              {truncate(paper.ai_summary, 160)}
+            </p>
+            <p className="text-[10px] text-slate-600 font-mono line-clamp-1 leading-tight">
+              ↳ {truncate(paper.title, 85)}
+            </p>
+          </div>
         ) : (
-          <>
-            <h3 className="text-sm font-semibold text-white leading-snug line-clamp-2 group-hover:text-accent-2 transition-colors mb-1.5">
+          <div className="flex flex-col gap-1.5">
+            <h3 className="text-[15px] font-bold text-white leading-snug line-clamp-3 group-hover:text-accent-2 transition-colors tracking-tight">
               {paper.title}
             </h3>
-            {paper.ai_summary ? (
-              <div className="flex gap-1.5">
-                <span className="text-accent-2 text-xs shrink-0 mt-px">💡</span>
-                <p className="text-xs text-slate-400 leading-relaxed line-clamp-2">
-                  {truncate(paper.ai_summary, 130)}
-                </p>
-              </div>
-            ) : (
+            {paper.abstract && (
               <p className="text-xs text-slate-500 leading-relaxed line-clamp-2">
-                {truncate(paper.abstract || '', 130)}
+                {truncate(paper.abstract, 130)}
               </p>
             )}
-          </>
+          </div>
         )}
       </div>
 
