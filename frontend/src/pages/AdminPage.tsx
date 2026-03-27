@@ -5,10 +5,10 @@ import {
   LayoutDashboard, FileText, Settings, Tag, RefreshCw, Plus, Trash2,
   Play, ArrowLeft, Database, TrendingUp, Brain, CheckCircle, Loader2,
   Activity, Users, Eye, Copy, Shield, ShieldOff, Wifi, WifiOff, Zap,
-  Clock, BookOpen, Star, AlertTriangle, Download
+  Clock, BookOpen, Star, AlertTriangle, Download, Layers
 } from 'lucide-react'
 import { adminApi } from '@/lib/api'
-import { AdminStats, ConfigItem, Keyword, AnalysisLog, AdminUser } from '@/lib/types'
+import { AdminStats, ConfigItem, Keyword, Subject, AnalysisLog, AdminUser } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import toast from 'react-hot-toast'
 
@@ -21,6 +21,7 @@ function AdminSidebar() {
     { to: '/admin/analysis', label: 'Analysis', icon: Activity },
     { to: '/admin/papers', label: 'Papers', icon: FileText },
     { to: '/admin/keywords', label: 'Keywords', icon: Tag },
+    { to: '/admin/subjects', label: 'Subjects', icon: Layers },
     { to: '/admin/users', label: 'Users', icon: Users },
     { to: '/admin/config', label: 'Config', icon: Settings },
     { to: '/admin/apis', label: 'APIs', icon: Wifi },
@@ -859,6 +860,115 @@ function PapersAdmin() {
   )
 }
 
+// ── Subjects ──────────────────────────────────────────────────────────────────
+
+function SubjectsAdmin() {
+  const [subjects, setSubjects] = useState<Subject[]>([])
+  const [form, setForm] = useState({ subject_code: '', description: '' })
+
+  const load = () => {
+    adminApi.getSubjects()
+      .then((r) => setSubjects(r.data || []))
+      .catch(() => toast.error('Failed to load subjects'))
+  }
+
+  useEffect(() => { load() }, [])
+
+  const addSubject = async (e: React.FormEvent) => {
+    e.preventDefault()
+    try {
+      await adminApi.addSubject(form.subject_code.trim(), form.description.trim())
+      toast.success('Subject added!')
+      setForm({ subject_code: '', description: '' })
+      load()
+    } catch {
+      toast.error('Failed to add subject (may already exist)')
+    }
+  }
+
+  const deleteSubject = async (id: number) => {
+    try {
+      await adminApi.deleteSubject(id)
+      load()
+    } catch {
+      toast.error('Failed to delete subject')
+    }
+  }
+
+  const toggleSubject = async (id: number) => {
+    try {
+      await adminApi.toggleSubject(id)
+      load()
+    } catch {
+      toast.error('Failed to toggle subject')
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-xl font-bold text-white">arXiv Subjects</h1>
+        <p className="text-sm text-muted">Active subjects are used to fetch papers from arXiv daily. Toggle to include/exclude a category.</p>
+      </div>
+
+      <form onSubmit={addSubject} className="bg-surface border border-accent/15 rounded-2xl p-5 space-y-4">
+        <h2 className="text-sm font-semibold text-white">Add Subject</h2>
+        <div className="grid grid-cols-2 gap-3">
+          <input
+            value={form.subject_code}
+            onChange={(e) => setForm({ ...form, subject_code: e.target.value })}
+            placeholder="e.g. cs.RO"
+            className="bg-surface-2 border border-accent/20 rounded-xl px-3 py-2 text-sm text-white placeholder:text-muted focus:outline-none focus:border-accent/50"
+            required
+          />
+          <input
+            value={form.description}
+            onChange={(e) => setForm({ ...form, description: e.target.value })}
+            placeholder="Description (e.g. Robotics)"
+            className="bg-surface-2 border border-accent/20 rounded-xl px-3 py-2 text-sm text-white placeholder:text-muted focus:outline-none focus:border-accent/50"
+          />
+        </div>
+        <button type="submit" className="flex items-center gap-1.5 px-4 py-2 bg-accent/20 hover:bg-accent/30 border border-accent/30 text-accent-2 text-sm font-medium rounded-xl transition-all">
+          <Plus size={14} /> Add Subject
+        </button>
+      </form>
+
+      <div className="bg-surface border border-accent/15 rounded-2xl p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-sm font-semibold text-white">Subject Categories</h2>
+          <span className="text-xs text-muted">{subjects.filter(s => s.is_active).length} active / {subjects.length} total</span>
+        </div>
+        {subjects.length === 0 ? (
+          <div className="p-8 text-center text-muted text-sm">No subjects configured</div>
+        ) : (
+          <div className="space-y-2">
+            {subjects.map((s) => (
+              <div key={s.id} className={cn('flex items-center justify-between gap-3 rounded-xl px-3 py-2.5 border transition-all', s.is_active ? 'bg-surface-2 border-accent/15' : 'bg-surface border-accent/8 opacity-50')}>
+                <div className="flex items-center gap-2.5">
+                  <div className={cn('w-1.5 h-1.5 rounded-full shrink-0', s.is_active ? 'bg-success' : 'bg-muted')} />
+                  <span className="text-sm font-mono text-accent-2 font-semibold">{s.subject_code}</span>
+                  <span className="text-xs text-muted">{s.description}</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => toggleSubject(s.id)}
+                    className={cn('text-xs px-2 py-1 rounded-lg border transition-all', s.is_active ? 'bg-success/10 border-success/30 text-green-400 hover:bg-success/20' : 'bg-surface-3 border-accent/15 text-muted hover:text-white')}
+                  >
+                    {s.is_active ? 'Active' : 'Inactive'}
+                  </button>
+                  <button onClick={() => deleteSubject(s.id)} className="p-1.5 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 text-muted hover:text-red-400 rounded-lg transition-all">
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Keywords ──────────────────────────────────────────────────────────────────
 
 function KeywordsAdmin() {
@@ -1449,6 +1559,7 @@ export function AdminPage() {
             <Route path="analysis" element={<AnalysisAdmin />} />
             <Route path="papers" element={<PapersAdmin />} />
             <Route path="keywords" element={<KeywordsAdmin />} />
+            <Route path="subjects" element={<SubjectsAdmin />} />
             <Route path="users" element={<UsersAdmin />} />
             <Route path="config" element={<ConfigAdmin />} />
             <Route path="apis" element={<ApisAdmin />} />

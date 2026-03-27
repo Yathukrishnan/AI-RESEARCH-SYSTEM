@@ -147,24 +147,35 @@ export function PaperCard({ paper, index = 0, sectionType }: Props) {
         )}
       </div>
 
-      {/* Row 2: Title */}
-      <h3 className="text-sm font-semibold text-white leading-snug line-clamp-2 group-hover:text-accent-2 transition-colors">
-        {paper.title}
-      </h3>
-
-      {/* Row 3: AI summary or abstract */}
+      {/* Row 2: Hook (primary) or title fallback */}
       <div className="flex-1">
-        {paper.ai_summary ? (
-          <div className="flex gap-1.5">
-            <span className="text-accent-2 text-xs shrink-0 mt-px">💡</span>
-            <p className="text-xs text-slate-400 leading-relaxed line-clamp-3">
-              {truncate(paper.ai_summary, 160)}
+        {(paper as any).hook_text ? (
+          <>
+            <p className="text-sm font-semibold text-white leading-snug line-clamp-2 group-hover:text-accent-2 transition-colors mb-1.5">
+              {(paper as any).hook_text}
             </p>
-          </div>
+            <p className="text-xs text-slate-500 leading-tight line-clamp-1 italic">
+              {truncate(paper.title, 100)}
+            </p>
+          </>
         ) : (
-          <p className="text-xs text-slate-500 leading-relaxed line-clamp-3">
-            {truncate(paper.abstract || '', 160)}
-          </p>
+          <>
+            <h3 className="text-sm font-semibold text-white leading-snug line-clamp-2 group-hover:text-accent-2 transition-colors mb-1.5">
+              {paper.title}
+            </h3>
+            {paper.ai_summary ? (
+              <div className="flex gap-1.5">
+                <span className="text-accent-2 text-xs shrink-0 mt-px">💡</span>
+                <p className="text-xs text-slate-400 leading-relaxed line-clamp-2">
+                  {truncate(paper.ai_summary, 130)}
+                </p>
+              </div>
+            ) : (
+              <p className="text-xs text-slate-500 leading-relaxed line-clamp-2">
+                {truncate(paper.abstract || '', 130)}
+              </p>
+            )}
+          </>
         )}
       </div>
 

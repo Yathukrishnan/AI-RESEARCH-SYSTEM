@@ -68,6 +68,11 @@ export const adminApi = {
   addKeyword: (keyword: string, weight: number, category: string) =>
     api.post('/admin/keywords', { keyword, weight, category }),
   deleteKeyword: (id: number) => api.delete(`/admin/keywords/${id}`),
+  getSubjects: () => api.get('/admin/subjects'),
+  addSubject: (subject_code: string, description: string) =>
+    api.post('/admin/subjects', { subject_code, description }),
+  deleteSubject: (id: number) => api.delete(`/admin/subjects/${id}`),
+  toggleSubject: (id: number) => api.patch(`/admin/subjects/${id}/toggle`),
   triggerFetch: (days = 1) => api.post(`/admin/trigger-fetch?days=${days}`),
   triggerRescore: () => api.post('/admin/trigger-rescore'),
   triggerEnrich: (batch = 50) => api.post(`/admin/trigger-enrich?batch=${batch}`),

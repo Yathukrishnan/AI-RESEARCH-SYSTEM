@@ -22,6 +22,7 @@ export interface PaperCard {
   scr_value: number
   ai_topic_tags: string[]
   ai_summary?: string
+  hook_text?: string
   citation_count: number
   github_stars: number
   view_count: number
@@ -94,6 +95,13 @@ export interface Keyword {
   weight: number
   category: string
   is_active: boolean
+}
+
+export interface Subject {
+  id: number
+  subject_code: string
+  description: string
+  is_active: number
 }
 
 export interface ConfigItem {

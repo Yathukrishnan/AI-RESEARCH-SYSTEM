@@ -30,7 +30,11 @@ export function AlertBanner({ alerts }: Props) {
   const cur = visible[current % visible.length]
 
   const handleClick = () => {
-    if (cur.paper_id) navigate(`/paper/${cur.paper_id}`)
+    if (cur.type === 'new_papers') {
+      navigate('/')
+    } else if (cur.paper_id) {
+      navigate(`/paper/${cur.paper_id}`)
+    }
   }
   const prev = (e: React.MouseEvent) => { e.stopPropagation(); setCurrent((c) => (c - 1 + visible.length) % visible.length) }
   const next = (e: React.MouseEvent) => { e.stopPropagation(); setCurrent((c) => (c + 1) % visible.length) }
