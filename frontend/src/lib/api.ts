@@ -8,7 +8,7 @@ const BASE_URL = import.meta.env.VITE_API_URL
 
 const api = axios.create({
   baseURL: BASE_URL,
-  timeout: 15000,
+  timeout: 30000,
 })
 
 function getSessionId(): string {
@@ -26,6 +26,23 @@ api.interceptors.request.use((config) => {
   if (token) config.headers['Authorization'] = `Bearer ${token}`
   return config
 })
+
+// On 401: clear stale token and redirect to login so user isn't stuck
+// seeing "Failed to fetch" on every admin panel load
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('auth_token')
+      localStorage.removeItem('user_role')
+      localStorage.removeItem('user_email')
+      if (window.location.pathname.startsWith('/admin')) {
+        window.location.href = '/login'
+      }
+    }
+    return Promise.reject(error)
+  }
+)
 
 export const feedApi = {
   getFeed: (page = 0) => api.get(`/feed?page=${page}`),
