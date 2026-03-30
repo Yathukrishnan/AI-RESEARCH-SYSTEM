@@ -168,6 +168,18 @@ CREATE TABLE IF NOT EXISTS paper_authors (
 )
 """
 
+CREATE_DAILY_HOOKS = """
+CREATE TABLE IF NOT EXISTS daily_hooks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    date TEXT NOT NULL,
+    paper_id INTEGER NOT NULL,
+    hook_text TEXT NOT NULL,
+    section_label TEXT DEFAULT '',
+    hook_order INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now'))
+)
+"""
+
 # Columns to add if missing (safe migrations)
 ENSURE_COLUMNS = [
     ("papers", "current_score",        "REAL",    "0.0"),
@@ -240,7 +252,8 @@ async def init_db():
     # 2. Create tables
     for ddl in [CREATE_PAPERS, CREATE_SCORE_HISTORY, CREATE_USERS,
                 CREATE_INTERACTIONS, CREATE_ALERTS, CREATE_CONFIG,
-                CREATE_KEYWORDS, CREATE_ANALYSIS_LOG, CREATE_SUBJECTS, CREATE_AUTHORS]:
+                CREATE_KEYWORDS, CREATE_ANALYSIS_LOG, CREATE_SUBJECTS, CREATE_AUTHORS,
+                CREATE_DAILY_HOOKS]:
         try:
             await db.execute(ddl)
         except Exception as e:

@@ -318,6 +318,163 @@ async def cron_daily_fetch(db: TursoClient = Depends(get_db)):
     return {"status": "triggered"}
 
 
+@router.get("/dashboard")
+async def get_dashboard(db: TursoClient = Depends(get_db)):
+    """
+    Returns all 8 Intelligence Dashboard sections in one call.
+    Cached 30 minutes. Full week's papers are available (no daily rotation cap).
+    """
+    cached = await cache_get("dashboard:v1")
+    if cached:
+        return cached
+
+    current_week = await _current_week(db)
+    W = "is_deleted = 0 AND is_duplicate = 0 AND is_above_threshold = 1 AND display_week <= ?"
+    P = [current_week]
+
+    from datetime import timedelta
+    cutoff_72h = (datetime.now(timezone.utc) - timedelta(hours=72)).isoformat()
+
+    # 1. Hero Hook – highest h_index trending paper
+    hero_rows = await db.fetchall(
+        f"SELECT rowid as id, * FROM papers WHERE {W} AND is_trending = 1 "
+        "ORDER BY h_index_max DESC, normalized_score DESC LIMIT 1", P
+    )
+    hero = _parse(dict(hero_rows[0])) if hero_rows else None
+
+    # 2. Hype Carousel – papers buzzing on HF/HN
+    hype = await db.fetchall(
+        f"SELECT rowid as id, * FROM papers WHERE {W} "
+        "AND (COALESCE(hf_upvotes,0) > 0 OR COALESCE(hn_points,0) > 0) "
+        "ORDER BY COALESCE(trending_score,0) DESC, normalized_score DESC LIMIT 5", P
+    )
+    if len(hype) < 5:
+        top_extra = await db.fetchall(
+            f"SELECT rowid as id, * FROM papers WHERE {W} "
+            "ORDER BY normalized_score DESC LIMIT 5", P
+        )
+        seen = {p.get("id") or p.get("rowid") for p in hype}
+        for p in top_extra:
+            if len(hype) >= 5: break
+            pid = p.get("id") or p.get("rowid")
+            if pid not in seen:
+                hype.append(p)
+                seen.add(pid)
+
+    # 3. Intelligence Grid – last 72 h papers
+    grid = await db.fetchall(
+        f"SELECT rowid as id, * FROM papers WHERE {W} "
+        "AND COALESCE(published_at, created_at) >= ? "
+        "ORDER BY normalized_score DESC LIMIT 6",
+        P + [cutoff_72h]
+    )
+    if not grid:
+        grid = await db.fetchall(
+            f"SELECT rowid as id, * FROM papers WHERE {W} "
+            "ORDER BY COALESCE(published_at, created_at) DESC LIMIT 6", P
+        )
+
+    # 4. Under the Radar – emerging researchers, high score
+    radar = await db.fetchall(
+        f"SELECT rowid as id, * FROM papers WHERE {W} "
+        "AND COALESCE(h_index_max,0) < 15 AND normalized_score > 0.45 "
+        "ORDER BY COALESCE(hf_upvotes,0) DESC, normalized_score DESC LIMIT 5", P
+    )
+
+    # 5. Builder's Arsenal – highest github_stars
+    arsenal = await db.fetchall(
+        f"SELECT rowid as id, * FROM papers WHERE {W} "
+        "AND COALESCE(github_stars,0) > 0 "
+        "ORDER BY github_stars DESC LIMIT 5", P
+    )
+
+    # 6. Velocity Desk – citation velocity surge, with score history
+    vel_rows = await db.fetchall(
+        f"SELECT rowid as id, * FROM papers WHERE {W} "
+        "AND COALESCE(citation_velocity,0) > 0 "
+        "ORDER BY citation_velocity DESC LIMIT 3", P
+    )
+    if not vel_rows:
+        vel_rows = await db.fetchall(
+            f"SELECT rowid as id, * FROM papers WHERE {W} "
+            "ORDER BY normalized_score DESC LIMIT 3", P
+        )
+    velocity_desk = []
+    for p in vel_rows:
+        pid = p.get("id") or p.get("rowid")
+        history = await db.fetchall(
+            "SELECT score FROM score_history WHERE paper_id = ? ORDER BY scored_at ASC LIMIT 7",
+            [pid]
+        )
+        parsed = _parse(dict(p))
+        parsed["score_history"] = [round(float(h["score"] or 0), 3) for h in history] or [float(parsed.get("normalized_score") or 0)]
+        velocity_desk.append(parsed)
+
+    # 7. Theory Corner – pure research, no code
+    theory = await db.fetchall(
+        f"SELECT rowid as id, * FROM papers WHERE {W} "
+        "AND COALESCE(github_stars,0) = 0 AND normalized_score > 0.50 "
+        "ORDER BY normalized_score DESC LIMIT 5", P
+    )
+
+    # 8. Contrarian View – non-mainstream categories
+    contrarian = await db.fetchall(
+        f"SELECT rowid as id, * FROM papers WHERE {W} "
+        "AND primary_category NOT IN ('cs.LG','cs.AI','cs.CL','cs.CV','cs.NE','stat.ML') "
+        "AND normalized_score > 0.45 "
+        "ORDER BY normalized_score DESC LIMIT 4", P
+    )
+    if not contrarian:
+        contrarian = await db.fetchall(
+            f"SELECT rowid as id, * FROM papers WHERE {W} "
+            "AND normalized_score > 0.45 "
+            "ORDER BY COALESCE(scr_value,0) ASC LIMIT 4", P
+        )
+
+    result = {
+        "hero": hero,
+        "hype_carousel": [_parse(p) for p in hype],
+        "intelligence_grid": [_parse(p) for p in grid],
+        "under_the_radar": [_parse(p) for p in radar],
+        "builders_arsenal": [_parse(p) for p in arsenal],
+        "velocity_desk": velocity_desk,
+        "theory_corner": [_parse(p) for p in theory],
+        "contrarian_view": [_parse(p) for p in contrarian],
+    }
+
+    await cache_set("dashboard:v1", result, ttl=1800)
+    return result
+
+
+@router.get("/hooks/today")
+async def get_daily_hooks(db: TursoClient = Depends(get_db)):
+    """Returns today's rotating hooks for the headline banner."""
+    from datetime import date as _date
+    today = _date.today().isoformat()
+    hooks = await db.fetchall(
+        "SELECT dh.id, dh.hook_text, dh.section_label, dh.hook_order, "
+        "p.title, p.rowid as paper_id "
+        "FROM daily_hooks dh JOIN papers p ON p.rowid = dh.paper_id "
+        "WHERE dh.date = ? ORDER BY dh.hook_order ASC",
+        [today]
+    )
+    # Fallback: if no hooks generated yet, pull from hook_text column on papers
+    if not hooks:
+        rows = await db.fetchall(
+            "SELECT rowid as id, title, hook_text FROM papers "
+            "WHERE hook_text IS NOT NULL AND hook_text != '' "
+            "AND is_deleted = 0 AND is_above_threshold = 1 "
+            "ORDER BY normalized_score DESC LIMIT 15"
+        )
+        labels = ["🔥 Trending Papers","💎 Hidden Gems","⚡ Just Added","📈 Rising Fast","🔬 Deep Research"]
+        hooks = [
+            {"id": i, "hook_text": r["hook_text"], "section_label": labels[i % len(labels)],
+             "hook_order": i, "title": r["title"], "paper_id": r["id"]}
+            for i, r in enumerate(rows)
+        ]
+    return {"date": today, "hooks": [dict(h) for h in hooks]}
+
+
 @router.get("/stats")
 async def get_stats(db: TursoClient = Depends(get_db)):
     """Public stats endpoint for the feed header."""

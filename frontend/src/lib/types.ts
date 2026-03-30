@@ -143,3 +143,57 @@ export interface AdminUser {
   is_active: number
   created_at?: string
 }
+
+export interface DashboardPaper {
+  id: number
+  arxiv_id?: string
+  title: string
+  abstract?: string
+  authors: { name: string; affiliation?: string; h_index?: number }[]
+  categories: string[]
+  primary_category?: string
+  published_at?: string
+  pdf_url?: string
+  github_url?: string
+  github_stars: number
+  citation_count: number
+  h_index_max?: number
+  normalized_score: number
+  current_score: number
+  trend_label?: string
+  ai_topic_tags: string[]
+  ai_summary?: string
+  hook_text?: string
+  hf_upvotes?: number
+  hn_points?: number
+  hn_comments?: number
+  citation_velocity?: number
+  trending_score?: number
+  rising_score?: number
+  gem_score?: number
+  platform_score?: number
+  view_count: number
+  save_count: number
+  click_count?: number
+  score_history?: number[]
+}
+
+export interface DashboardData {
+  hero: DashboardPaper | null
+  hype_carousel: DashboardPaper[]
+  intelligence_grid: DashboardPaper[]
+  under_the_radar: DashboardPaper[]
+  builders_arsenal: DashboardPaper[]
+  velocity_desk: DashboardPaper[]
+  theory_corner: DashboardPaper[]
+  contrarian_view: DashboardPaper[]
+}
+
+export interface DailyHook {
+  id: number
+  hook_text: string
+  section_label: string
+  hook_order: number
+  title: string
+  paper_id: number
+}

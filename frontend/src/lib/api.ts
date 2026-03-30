@@ -107,4 +107,12 @@ export const adminApi = {
   getServiceConfig: () => api.get('/admin/service-config'),
 }
 
+export const dashboardApi = {
+  get: () => api.get('/dashboard'),
+}
+
+export const hooksApi = {
+  getToday: () => api.get('/hooks/today'),
+}
+
 export default api

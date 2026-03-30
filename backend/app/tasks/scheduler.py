@@ -57,11 +57,14 @@ async def _weekly_content_transition():
 
 
 async def _daily_hook_generation():
-    """Generate hooks for any papers still missing them. Runs daily at 03:15 UTC."""
+    """Generate today's 15 rotating hooks. Runs daily at 03:15 UTC."""
     try:
-        from app.tasks.paper_tasks import generate_missing_hooks
-        count = await generate_missing_hooks(batch_size=500)
-        logger.info(f"Daily hook generation: {count} hooks generated")
+        from app.tasks.paper_tasks import generate_daily_hooks, generate_missing_hooks
+        # First fill any papers that still have no hook_text at all (backfill)
+        await generate_missing_hooks(batch_size=200)
+        # Then generate today's 15 rotating daily hooks
+        count = await generate_daily_hooks(count=15)
+        logger.info(f"Daily hook generation: {count} daily hooks generated")
     except Exception as e:
         logger.error(f"Daily hook generation error: {e}")
 

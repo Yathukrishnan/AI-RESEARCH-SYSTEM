@@ -478,6 +478,70 @@ async def generate_missing_hooks(batch_size: int = 500, force: bool = False) -> 
     return count
 
 
+async def generate_daily_hooks(count: int = 15) -> int:
+    """
+    Generate today's 15 rotating hooks for the headline banner.
+    Picks top-scored papers, generates a punchy hook for each,
+    assigns a rotating section_label, stores in daily_hooks table.
+    """
+    from datetime import date as _date
+    today = _date.today().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
+
+    existing = await turso_db.fetchall(
+        "SELECT paper_id FROM daily_hooks WHERE date = ?", [today]
+    )
+    if len(existing) >= count:
+        logger.info(f"Daily hooks: {len(existing)} already generated for {today}")
+        return len(existing)
+
+    exclude_ids = [r["paper_id"] for r in existing]
+    needed = count - len(exclude_ids)
+
+    not_in_clause = f"AND rowid NOT IN ({','.join(['?']*len(exclude_ids))})" if exclude_ids else ""
+    rows = await turso_db.fetchall(
+        f"SELECT rowid as id, title, abstract FROM papers "
+        f"WHERE is_deleted = 0 AND is_duplicate = 0 AND is_above_threshold = 1 {not_in_clause} "
+        f"ORDER BY normalized_score DESC LIMIT ?",
+        exclude_ids + [needed * 2]  # fetch extra in case some fail
+    )
+    if not rows:
+        logger.info("Daily hooks: no papers available")
+        return 0
+
+    ai_svc = AIValidationService(settings.OPENROUTER_API_KEY)
+    semaphore = asyncio.Semaphore(3)
+    section_labels = [
+        "🔥 Trending Papers", "💎 Hidden Gems", "⚡ Just Added",
+        "📈 Rising Fast", "🔬 Deep Research",
+    ]
+    generated = 0
+    order_start = len(existing)
+
+    async def _gen(paper, order):
+        nonlocal generated
+        async with semaphore:
+            try:
+                hook = await ai_svc.generate_hook_only(
+                    paper.get("title", ""), paper.get("abstract", "")
+                )
+                if hook:
+                    label = section_labels[order % len(section_labels)]
+                    await turso_db.execute(
+                        "INSERT INTO daily_hooks (date, paper_id, hook_text, section_label, hook_order, created_at) "
+                        "VALUES (?, ?, ?, ?, ?, ?)",
+                        [today, paper["id"], hook, label, order, now]
+                    )
+                    generated += 1
+            except Exception as e:
+                logger.debug(f"Daily hook gen error paper {paper.get('id')}: {e}")
+
+    tasks = [_gen(p, order_start + i) for i, p in enumerate(rows[:needed])]
+    await asyncio.gather(*tasks, return_exceptions=True)
+    logger.info(f"Daily hooks: generated {generated}/{needed} for {today}")
+    return generated
+
+
 async def refresh_social_signals(batch_size: int = 200) -> int:
     """
     Fetch HuggingFace upvotes, HackerNews discussion, and OpenAlex citation velocity
