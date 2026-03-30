@@ -3,7 +3,17 @@ import { useNavigate } from 'react-router-dom'
 import { AlertTriangle, ArrowUpRight } from 'lucide-react'
 import { DashboardPaper } from '@/lib/types'
 import { feedApi } from '@/lib/api'
-import { timeAgo } from '@/lib/utils'
+import { timeAgo, dailyHook } from '@/lib/utils'
+
+const HOOKS = [
+  "Research actively challenging dominant scaling paradigms",
+  "Not cs.LG. Not cs.AI. The ideas coming from the edges of the field",
+  "The papers asking whether the whole field is going the wrong direction",
+  "Heterodox research with high scores — worth taking seriously",
+  "Outside the mainstream. Inside the frontier",
+  "When everyone zigs — these papers zag",
+  "Contrarian bets that might be right — explore at your own risk",
+]
 
 interface Props { papers: DashboardPaper[] }
 
@@ -31,7 +41,7 @@ export function ContrarianView({ papers }: Props) {
         </div>
         <div>
           <h2 className="text-sm font-bold text-white">The Contrarian View</h2>
-          <p className="text-xs text-muted mt-0.5">Research actively challenging dominant scaling paradigms</p>
+          <p className="text-xs text-muted mt-0.5">{dailyHook(HOOKS)}</p>
         </div>
       </div>
 

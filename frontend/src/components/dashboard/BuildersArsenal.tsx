@@ -3,6 +3,17 @@ import { useNavigate } from 'react-router-dom'
 import { Github, Star, Terminal } from 'lucide-react'
 import { DashboardPaper } from '@/lib/types'
 import { feedApi } from '@/lib/api'
+import { dailyHook } from '@/lib/utils'
+
+const HOOKS = [
+  "-- theory is good, code is better",
+  "-- papers with repos that actually run",
+  "-- research you can clone, not just cite",
+  "-- the papers shipping real implementations",
+  "-- code or it didn't happen",
+  "-- reproducible research, ranked by stars",
+  "-- where the rubber meets the road",
+]
 
 interface Props { papers: DashboardPaper[] }
 
@@ -35,7 +46,7 @@ export function BuildersArsenal({ papers }: Props) {
           <Terminal size={13} className="text-green-400" />
           <span className="text-xs font-mono text-green-400 font-bold">Builder's Arsenal</span>
         </div>
-        <span className="text-xs font-mono text-slate-600 ml-auto">-- theory is good, code is better</span>
+        <span className="text-xs font-mono text-slate-600 ml-auto">{dailyHook(HOOKS)}</span>
       </div>
 
       <div className="p-5 space-y-2">

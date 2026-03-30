@@ -3,7 +3,17 @@ import { useNavigate } from 'react-router-dom'
 import { BookOpen } from 'lucide-react'
 import { DashboardPaper } from '@/lib/types'
 import { feedApi } from '@/lib/api'
-import { timeAgo } from '@/lib/utils'
+import { timeAgo, dailyHook } from '@/lib/utils'
+
+const HOOKS = [
+  "Mathematical bounds and pure science — no code required",
+  "The theoreticians are working. Here's what they proved this week",
+  "No GitHub repo. No demos. Just rigorous proofs and new ideas",
+  "The foundations being laid today will ship in products in 5 years",
+  "Pure research that refuses to be rushed — read it carefully",
+  "The ideas that will outlast every current benchmark",
+  "Fundamental advances in theory — where the real breakthroughs start",
+]
 
 interface Props { papers: DashboardPaper[] }
 
@@ -28,7 +38,7 @@ export function TheoryCorner({ papers }: Props) {
         <h2 className="text-sm font-bold text-white flex items-center gap-2">
           <BookOpen size={14} className="text-slate-400" /> Theory Desk
         </h2>
-        <p className="text-xs text-muted mt-0.5">Mathematical bounds and pure science — no code required</p>
+        <p className="text-xs text-muted mt-0.5">{dailyHook(HOOKS)}</p>
       </div>
 
       <div className="space-y-0 divide-y divide-accent/5">

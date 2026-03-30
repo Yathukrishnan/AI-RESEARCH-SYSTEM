@@ -3,7 +3,17 @@ import { useNavigate } from 'react-router-dom'
 import { Radio, ArrowUpRight } from 'lucide-react'
 import { DashboardPaper } from '@/lib/types'
 import { feedApi } from '@/lib/api'
-import { timeAgo } from '@/lib/utils'
+import { timeAgo, dailyHook } from '@/lib/utils'
+
+const HOOKS = [
+  "Next-gen researchers the community is quietly upvoting",
+  "Brilliant work from authors nobody's heard of — yet",
+  "Low h-index, high impact — emerging voices worth following",
+  "The next generation of AI researchers is publishing right now",
+  "Researchers you've never heard of writing papers you need to read",
+  "Not famous. Not hyped. Just quietly doing exceptional work",
+  "Unknown authors, unmissable research — discover them first",
+]
 
 interface Props { papers: DashboardPaper[] }
 
@@ -29,7 +39,7 @@ export function UnderTheRadar({ papers }: Props) {
         <h2 className="text-sm font-bold text-white flex items-center gap-2">
           <Radio size={14} className="text-purple-400" /> Under the Radar
         </h2>
-        <p className="text-xs text-muted mt-0.5">Next-gen researchers the community is quietly upvoting</p>
+        <p className="text-xs text-muted mt-0.5">{dailyHook(HOOKS)}</p>
       </div>
 
       <div className="space-y-2">

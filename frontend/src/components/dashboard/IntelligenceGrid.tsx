@@ -3,7 +3,17 @@ import { useNavigate } from 'react-router-dom'
 import { Clock, Zap } from 'lucide-react'
 import { DashboardPaper } from '@/lib/types'
 import { feedApi } from '@/lib/api'
-import { timeAgo } from '@/lib/utils'
+import { timeAgo, dailyHook } from '@/lib/utils'
+
+const HOOKS = [
+  "The papers everyone in AI will be talking about tomorrow",
+  "Freshest high-signal research — published and ranked in the last 72 hours",
+  "Catch up fast: the most important papers since you last checked",
+  "New this cycle — the papers making waves right now",
+  "Critical research landing in the last 3 days, scored and ranked",
+  "What just dropped that actually matters — today's top papers",
+  "The field moved. Here's where it went in the last 72 hours",
+]
 
 interface Props { papers: DashboardPaper[] }
 
@@ -30,7 +40,7 @@ export function IntelligenceGrid({ papers }: Props) {
           <Zap size={14} className="text-cyan-400" /> Intelligence Grid
         </h2>
         <p className="text-xs text-muted mt-0.5 flex items-center gap-1">
-          <Clock size={10} /> Most critical papers in the last 72 hours
+          <Clock size={10} /> {dailyHook(HOOKS)}
         </p>
       </div>
 

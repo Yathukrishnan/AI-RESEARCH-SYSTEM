@@ -4,7 +4,17 @@ import { ChevronLeft, ChevronRight, TrendingUp, MessageCircle } from 'lucide-rea
 import { useNavigate } from 'react-router-dom'
 import { DashboardPaper } from '@/lib/types'
 import { feedApi } from '@/lib/api'
-import { timeAgo } from '@/lib/utils'
+import { timeAgo, dailyHook } from '@/lib/utils'
+
+const HOOKS = [
+  "Tearing through HuggingFace and HN this week",
+  "The papers the community can't stop sharing right now",
+  "Most upvoted, most discussed — community signal at full strength",
+  "What practitioners are actually deploying and talking about",
+  "Papers moving from arXiv to production in record time",
+  "The AI community voted. These are the ones that matter",
+  "Breakout research with real-world traction — swipe to explore",
+]
 
 interface Props { papers: DashboardPaper[] }
 
@@ -36,7 +46,7 @@ export function HypeCarousel({ papers }: Props) {
           <h2 className="text-sm font-bold text-white flex items-center gap-2">
             <TrendingUp size={14} className="text-yellow-400" /> Breakout Architectures
           </h2>
-          <p className="text-xs text-muted mt-0.5">Tearing through HuggingFace and HN this week</p>
+          <p className="text-xs text-muted mt-0.5">{dailyHook(HOOKS)}</p>
         </div>
         <div className="flex gap-1">
           <button onClick={() => scroll('left')} className="p-1.5 rounded-lg hover:bg-surface-2 text-muted hover:text-white transition-all">

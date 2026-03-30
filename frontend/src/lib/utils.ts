@@ -2,6 +2,12 @@ import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 import { formatDistanceToNow, format } from 'date-fns'
 
+/** Returns a hook that rotates daily from a list — same pick for everyone on the same day */
+export function dailyHook(hooks: string[]): string {
+  const day = Math.floor(Date.now() / 86_400_000)
+  return hooks[day % hooks.length]
+}
+
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }

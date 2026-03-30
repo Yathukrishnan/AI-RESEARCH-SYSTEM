@@ -3,7 +3,17 @@ import { useNavigate } from 'react-router-dom'
 import { Activity } from 'lucide-react'
 import { DashboardPaper } from '@/lib/types'
 import { feedApi } from '@/lib/api'
-import { timeAgo } from '@/lib/utils'
+import { timeAgo, dailyHook } from '@/lib/utils'
+
+const HOOKS = [
+  "Quiet at launch — suddenly surging today",
+  "Citation velocity spiking: these papers are accelerating fast",
+  "Slow burn papers suddenly catching fire across the field",
+  "The momentum shift you don't want to miss this week",
+  "Papers the algorithm didn't catch first — but you will",
+  "From obscure to essential — watch these climb in real time",
+  "Scores moving fast. These papers are on a trajectory",
+]
 
 interface Props { papers: DashboardPaper[] }
 
@@ -54,7 +64,7 @@ export function VelocityDesk({ papers }: Props) {
         <h2 className="text-sm font-bold text-white flex items-center gap-2">
           <Activity size={14} className="text-emerald-400" /> Velocity Desk
         </h2>
-        <p className="text-xs text-muted mt-0.5">Quiet at launch — suddenly surging today</p>
+        <p className="text-xs text-muted mt-0.5">{dailyHook(HOOKS)}</p>
       </div>
 
       <div className="space-y-3">
