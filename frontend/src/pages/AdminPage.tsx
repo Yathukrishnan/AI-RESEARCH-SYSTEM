@@ -1566,11 +1566,75 @@ function SocialSignalsCard() {
   )
 }
 
+// ── ServiceConfigCard ─────────────────────────────────────────────────────────
+
+function ServiceConfigCard() {
+  const [configs, setConfigs] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    adminApi.getServiceConfig()
+      .then((r) => setConfigs(r.data || []))
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
+  const serviceColors: Record<string, string> = {
+    Turso:     'text-blue-400',
+    OpenRouter:'text-pink-400',
+    Auth:      'text-yellow-400',
+    Redis:     'text-red-400',
+    CORS:      'text-slate-400',
+  }
+
+  return (
+    <div className="bg-surface border border-accent/15 rounded-2xl overflow-hidden">
+      <div className="px-5 py-3 border-b border-accent/10 flex items-center gap-2">
+        <Shield size={15} className="text-accent-2" />
+        <h2 className="text-sm font-semibold text-white">Environment Configuration</h2>
+        <span className="text-xs text-muted ml-auto">Credentials are masked — set via .env / Render dashboard</span>
+      </div>
+
+      {loading ? (
+        <div className="px-5 py-6 flex items-center gap-2 text-muted text-sm">
+          <Loader2 size={14} className="animate-spin" /> Loading…
+        </div>
+      ) : (
+        <div className="divide-y divide-accent/5">
+          {configs.map((cfg) => (
+            <div key={cfg.key} className="px-5 py-3 flex items-start gap-3">
+              {/* Status dot */}
+              <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${cfg.set ? 'bg-green-400' : cfg.required ? 'bg-red-400 animate-pulse' : 'bg-slate-600'}`} />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-mono text-white">{cfg.key}</span>
+                  <span className={`text-xs font-medium ${serviceColors[cfg.service] ?? 'text-slate-400'}`}>{cfg.service}</span>
+                  {cfg.set ? (
+                    <span className="text-xs text-green-400 bg-green-400/10 px-1.5 py-0.5 rounded-full">set</span>
+                  ) : cfg.required ? (
+                    <span className="text-xs text-red-400 bg-red-400/10 px-1.5 py-0.5 rounded-full">missing — required</span>
+                  ) : (
+                    <span className="text-xs text-slate-500 bg-surface-3 px-1.5 py-0.5 rounded-full">not set (optional)</span>
+                  )}
+                </div>
+                <p className="text-xs text-muted mt-0.5">{cfg.description}</p>
+                {cfg.preview && (
+                  <p className="text-xs font-mono text-slate-500 mt-0.5">{cfg.preview}</p>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── APIs & Enrichment ─────────────────────────────────────────────────────────
 
 function ApisAdmin() {
   const [healthLoading, setHealthLoading] = useState(false)
-  const [results, setResults] = useState<Record<string, { ok: boolean; status: number; latency_ms: number; error?: string } | null>>({})
+  const [results, setResults] = useState<Record<string, { ok: boolean; status: number; latency_ms: number; error?: string; detail?: string } | null>>({})
 
   const testAllApis = async () => {
     setHealthLoading(true)
@@ -1584,122 +1648,149 @@ function ApisAdmin() {
     }
   }
 
+  // All 9 external services, grouped by role
   const apis = [
+    // ── Fetch ────────────────────────────────────────────────────────────────
     {
       name: 'ArXiv API',
       description: 'Fetches new AI/ML research papers daily. Free, no auth required.',
       url: 'export.arxiv.org/api/query',
-      rateLimit: '~3 req/s, polite use',
+      docsUrl: 'https://info.arxiv.org/help/api/',
+      rateLimit: '3 s delay between pages',
+      auth: 'None',
       icon: Database,
-      color: 'text-cyan-400',
-      border: 'border-cyan-500/20',
-      bg: 'bg-cyan-500/8',
+      color: 'text-cyan-400', border: 'border-cyan-500/20', bg: 'bg-cyan-500/8',
       category: 'Fetch',
     },
+    // ── Enrich ───────────────────────────────────────────────────────────────
     {
       name: 'Semantic Scholar',
-      description: 'Enriches papers with citation counts, influential citations, and author h-indices via batch API.',
+      description: 'Batch citation counts, influential citation counts, and author h-indices.',
       url: 'api.semanticscholar.org/graph/v1',
-      rateLimit: '100 req/5 min (free tier)',
+      docsUrl: 'https://api.semanticscholar.org/api-docs/',
+      rateLimit: '100 req / 5 min (free tier)',
+      auth: 'None (public)',
       icon: Brain,
-      color: 'text-purple-400',
-      border: 'border-purple-500/20',
-      bg: 'bg-purple-500/8',
+      color: 'text-purple-400', border: 'border-purple-500/20', bg: 'bg-purple-500/8',
       category: 'Enrich',
     },
     {
       name: 'Papers with Code',
-      description: 'Links papers to GitHub repositories and official code implementations.',
+      description: 'Links papers to GitHub repos and official code implementations. Provides github_url, stars, forks.',
       url: 'paperswithcode.com/api/v1',
-      rateLimit: '5 concurrent, 300ms delay',
+      docsUrl: 'https://paperswithcode.com/api/v1/docs/',
+      rateLimit: '5 concurrent, 300 ms slots',
+      auth: 'None',
       icon: Zap,
-      color: 'text-green-400',
-      border: 'border-green-500/20',
-      bg: 'bg-green-500/8',
+      color: 'text-green-400', border: 'border-green-500/20', bg: 'bg-green-500/8',
       category: 'Enrich',
     },
+    // ── Social ───────────────────────────────────────────────────────────────
     {
       name: 'HuggingFace Papers',
-      description: 'Retrieves community upvotes for papers listed on HuggingFace Papers. Used in trending score.',
+      description: 'Community upvotes per paper. Feeds the trending_score — viral HF papers surface faster.',
       url: 'huggingface.co/api/papers/{arxiv_id}',
-      rateLimit: 'Polite: 50ms delay, 3 concurrent',
+      docsUrl: 'https://huggingface.co/papers',
+      rateLimit: '50 ms delay, 3 concurrent',
+      auth: 'None',
       icon: TrendingUp,
-      color: 'text-yellow-400',
-      border: 'border-yellow-500/20',
-      bg: 'bg-yellow-500/8',
+      color: 'text-yellow-400', border: 'border-yellow-500/20', bg: 'bg-yellow-500/8',
       category: 'Social',
     },
     {
       name: 'HackerNews Algolia',
-      description: 'Searches HN for discussion threads mentioning the paper. Points + comments feed the trending score.',
+      description: 'Searches HN stories mentioning the paper. Points + comments contribute to trending_score.',
       url: 'hn.algolia.com/api/v1/search',
-      rateLimit: 'Polite: 50ms delay, 3 concurrent',
+      docsUrl: 'https://hn.algolia.com/api',
+      rateLimit: '50 ms delay, 3 concurrent',
+      auth: 'None',
       icon: Activity,
-      color: 'text-orange-400',
-      border: 'border-orange-500/20',
-      bg: 'bg-orange-500/8',
+      color: 'text-orange-400', border: 'border-orange-500/20', bg: 'bg-orange-500/8',
       category: 'Social',
     },
     {
       name: 'OpenAlex',
-      description: 'Free scholarly metadata. Used for citation velocity (year-over-year growth) alongside Semantic Scholar.',
+      description: 'Free scholarly metadata for citation velocity (year-over-year citation growth rate).',
       url: 'api.openalex.org/works/arxiv:{id}',
-      rateLimit: '10 req/s polite pool, 120ms delay',
+      docsUrl: 'https://docs.openalex.org/',
+      rateLimit: '10 req/s polite pool, 120 ms delay',
+      auth: 'None (email in User-Agent)',
       icon: BookOpen,
-      color: 'text-blue-400',
-      border: 'border-blue-500/20',
-      bg: 'bg-blue-500/8',
+      color: 'text-blue-400', border: 'border-blue-500/20', bg: 'bg-blue-500/8',
       category: 'Social',
     },
+    // ── AI ───────────────────────────────────────────────────────────────────
     {
       name: 'OpenRouter (Gemini)',
-      description: 'AI validation via Gemini Flash Lite. Scores relevance, generates hooks, topic tags and summaries.',
-      url: 'openrouter.ai/api/v1',
-      rateLimit: 'Rate varies by model/tier',
+      description: 'AI paper validation via Gemini Flash Lite: relevance score, impact score, topic tags, summary, and hook generation.',
+      url: 'openrouter.ai/api/v1/chat/completions',
+      docsUrl: 'https://openrouter.ai/docs',
+      rateLimit: 'Model-tier quota — OPENROUTER_API_KEY required',
+      auth: 'Bearer token',
       icon: Brain,
-      color: 'text-pink-400',
-      border: 'border-pink-500/20',
-      bg: 'bg-pink-500/8',
+      color: 'text-pink-400', border: 'border-pink-500/20', bg: 'bg-pink-500/8',
       category: 'AI',
+    },
+    // ── Infrastructure ───────────────────────────────────────────────────────
+    {
+      name: 'Turso',
+      description: 'Primary database — libSQL / SQLite edge DB. Stores all papers, scores, config, logs, author cache.',
+      url: '*.turso.io (libsql:// + https://)',
+      docsUrl: 'https://docs.turso.tech/',
+      rateLimit: 'Plan-based row/request limits',
+      auth: 'JWT token (TURSO_AUTH_TOKEN)',
+      icon: Database,
+      color: 'text-sky-400', border: 'border-sky-500/20', bg: 'bg-sky-500/8',
+      category: 'Infrastructure',
+    },
+    {
+      name: 'Redis',
+      description: 'Optional in-memory cache for feed responses (5-min TTL). Gracefully disabled if not available.',
+      url: 'redis://localhost:6379',
+      docsUrl: 'https://redis.io/docs/',
+      rateLimit: 'N/A (local or managed)',
+      auth: 'Optional (REDIS_URL env var)',
+      icon: Zap,
+      color: 'text-red-400', border: 'border-red-500/20', bg: 'bg-red-500/8',
+      category: 'Infrastructure',
     },
   ]
 
-  const categoryColors: Record<string, string> = {
-    Fetch: 'text-cyan-400 bg-cyan-500/10 border-cyan-500/20',
-    Enrich: 'text-purple-400 bg-purple-500/10 border-purple-500/20',
-    Social: 'text-yellow-400 bg-yellow-500/10 border-yellow-500/20',
-    AI: 'text-pink-400 bg-pink-500/10 border-pink-500/20',
+  const categoryMeta: Record<string, { label: string; color: string; desc: string }> = {
+    Fetch:          { label: 'Fetch',          color: 'text-cyan-400 bg-cyan-500/10 border-cyan-500/20',     desc: 'Paper ingestion' },
+    Enrich:         { label: 'Enrich',         color: 'text-purple-400 bg-purple-500/10 border-purple-500/20', desc: 'Citation & GitHub data' },
+    Social:         { label: 'Social Signals', color: 'text-yellow-400 bg-yellow-500/10 border-yellow-500/20', desc: 'Community engagement' },
+    AI:             { label: 'AI / LLM',       color: 'text-pink-400 bg-pink-500/10 border-pink-500/20',     desc: 'Scoring & hooks' },
+    Infrastructure: { label: 'Infrastructure', color: 'text-sky-400 bg-sky-500/10 border-sky-500/20',         desc: 'Storage & cache' },
   }
 
-  const statusIcon = (name: string) => {
-    const r = results[name]
-    if (healthLoading) return <Loader2 size={13} className="animate-spin text-muted" />
-    if (!r) return <Wifi size={13} className="text-muted" />
-    if (r.ok) return <CheckCircle size={13} className="text-green-400" />
-    return <WifiOff size={13} className="text-red-400" />
-  }
+  const healthResult = (name: string) => results[name]
 
-  const statusBadge = (name: string) => {
-    const r = results[name]
-    if (!r) return null
+  const StatusBadge = ({ name }: { name: string }) => {
+    const r = healthResult(name)
+    if (healthLoading) return <Loader2 size={12} className="animate-spin text-muted" />
+    if (!r) return <span className="text-xs text-muted">—</span>
     if (r.ok) return (
-      <span className="text-xs text-green-400 bg-green-400/10 border border-green-400/20 px-1.5 py-0.5 rounded-full">
-        {r.status} · {r.latency_ms}ms
+      <span className="inline-flex items-center gap-1 text-xs text-green-400 bg-green-400/10 border border-green-400/20 px-1.5 py-0.5 rounded-full">
+        <CheckCircle size={10} /> {r.detail || `${r.status} · ${r.latency_ms}ms`}
       </span>
     )
     return (
-      <span className="text-xs text-red-400 bg-red-400/10 border border-red-400/20 px-1.5 py-0.5 rounded-full">
-        {r.status || 'timeout'} {r.error ? `· ${r.error}` : ''}
+      <span className="inline-flex items-center gap-1 text-xs text-red-400 bg-red-400/10 border border-red-400/20 px-1.5 py-0.5 rounded-full">
+        <WifiOff size={10} /> {r.status || 'unreachable'}{r.error ? ` · ${r.error}` : ''}
       </span>
     )
   }
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-white">Data Sources & APIs</h1>
-          <p className="text-sm text-muted mt-1">All external APIs used by the pipeline — with rate limits and live health check.</p>
+          <h1 className="text-xl font-bold text-white">APIs & Third-Party Services</h1>
+          <p className="text-sm text-muted mt-1">
+            Every external service this system depends on — 9 total across 5 categories.
+          </p>
         </div>
         <button
           onClick={testAllApis} disabled={healthLoading}
@@ -1711,31 +1802,49 @@ function ApisAdmin() {
       </div>
 
       {/* API cards grouped by category */}
-      {(['Fetch', 'Enrich', 'Social', 'AI'] as const).map((cat) => {
+      {(['Fetch', 'Enrich', 'Social', 'AI', 'Infrastructure'] as const).map((cat) => {
+        const meta = categoryMeta[cat]
         const catApis = apis.filter((a) => a.category === cat)
         return (
           <div key={cat} className="space-y-3">
+            {/* Category header */}
             <div className="flex items-center gap-2">
-              <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full border ${categoryColors[cat]}`}>{cat}</span>
+              <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full border ${meta.color}`}>{meta.label}</span>
+              <span className="text-xs text-muted">{meta.desc}</span>
               <div className="h-px flex-1 bg-accent/10" />
             </div>
-            {catApis.map(({ name, description, url, rateLimit, icon: Icon, color, border, bg }) => (
+
+            {catApis.map(({ name, description, url, docsUrl, rateLimit, auth, icon: Icon, color, border, bg }) => (
               <div key={name} className={`bg-surface border ${border} rounded-2xl p-4`}>
                 <div className="flex items-start gap-3">
+                  {/* Icon */}
                   <div className={`w-9 h-9 rounded-xl ${bg} border ${border} flex items-center justify-center shrink-0`}>
                     <Icon size={16} className={color} />
                   </div>
+
+                  {/* Content */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <h3 className="text-sm font-semibold text-white">{name}</h3>
-                      {statusIcon(name)}
-                      {statusBadge(name)}
+                      <StatusBadge name={name} />
+                      <a
+                        href={docsUrl} target="_blank" rel="noopener noreferrer"
+                        className="text-xs text-muted hover:text-accent-2 transition-colors ml-auto shrink-0"
+                      >
+                        Docs ↗
+                      </a>
                     </div>
-                    <p className="text-xs text-muted mt-0.5">{description}</p>
-                    <div className="flex items-center gap-4 mt-1.5">
-                      <span className="text-xs font-mono text-slate-500 truncate">{url}</span>
-                      <span className="text-xs text-slate-500 shrink-0 flex items-center gap-1">
+                    <p className="text-xs text-muted mt-0.5 leading-relaxed">{description}</p>
+
+                    {/* Meta row */}
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2">
+                      <span className="text-xs font-mono text-slate-500">{url}</span>
+                      <span className="text-xs text-slate-500 flex items-center gap-1">
                         <Clock size={10} /> {rateLimit}
+                      </span>
+                      <span className={`text-xs flex items-center gap-1 ${auth === 'None' || auth.startsWith('None') ? 'text-green-500' : 'text-yellow-500'}`}>
+                        {auth === 'None' || auth.startsWith('None') ? <ShieldOff size={10} /> : <Shield size={10} />}
+                        {auth}
                       </span>
                     </div>
                   </div>
@@ -1746,20 +1855,27 @@ function ApisAdmin() {
         )
       })}
 
+      {/* Social signals coverage */}
       <SocialSignalsCard />
 
+      {/* Environment config */}
+      <ServiceConfigCard />
+
+      {/* Scheduler */}
       <SchedulerStatus />
 
+      {/* Pipeline overview */}
       <div className="bg-surface border border-accent/15 rounded-2xl p-5 space-y-3">
         <h2 className="text-sm font-semibold text-white">Pipeline Overview</h2>
         <div className="space-y-2 text-xs text-muted">
           {[
-            ['1. Fetch',   'ArXiv API → downloads new AI/ML papers daily at 8:00 AM IST'],
-            ['2. Enrich',  'Semantic Scholar → citations + h-indices · Papers with Code → GitHub stars'],
-            ['3. Score',   'TF-IDF keyword score + Gemini AI validation (OpenRouter) → current_score'],
-            ['4. Social',  'HuggingFace + HackerNews + OpenAlex → trending/rising/gem/platform scores'],
-            ['5. Rank',    'Normalize globally (0–1), assign trend labels using quality + social signals'],
-            ['6. Serve',   'Feed returns Trending / Rising / Hidden Gems / Top Picks sections'],
+            ['1. Fetch',   'ArXiv API → new AI/ML papers daily at 8:00 AM IST'],
+            ['2. Enrich',  'Semantic Scholar (citations + h-index) · Papers with Code (GitHub stars)'],
+            ['3. Score',   'TF-IDF keyword + Gemini Flash Lite AI validation → current_score'],
+            ['4. Social',  'HuggingFace · HackerNews · OpenAlex → trending/rising/gem scores (every 4h)'],
+            ['5. Rank',    'Normalize globally (0–1) · assign trend labels using quality + social signals'],
+            ['6. Cache',   'Redis caches feed responses (5 min TTL) to reduce Turso DB load'],
+            ['7. Serve',   'Feed API → Trending / Rising / Hidden Gems / Top Picks sections'],
           ].map(([step, desc]) => (
             <div key={step} className="flex gap-3">
               <span className="text-accent-2 font-semibold shrink-0 w-16">{step}</span>

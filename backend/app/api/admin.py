@@ -427,15 +427,16 @@ async def trigger_social_signals(
 
 
 @router.get("/api-health")
-async def api_health(_: dict = Depends(require_admin)):
+async def api_health(db: TursoClient = Depends(get_db), _: dict = Depends(require_admin)):
     """
-    Server-side connectivity check for all external APIs.
-    Tests a lightweight known-good URL for each service.
-    Returns {api_name: {ok: bool, status: int, latency_ms: int}}.
+    Server-side connectivity check for ALL external services.
+    Tests a lightweight known-good URL for each API.
+    Also checks Turso (DB query) and Redis (ping).
+    Returns {service_name: {ok, status, latency_ms}}.
     """
     import httpx, time
 
-    checks = {
+    http_checks = {
         "ArXiv":              "http://export.arxiv.org/api/query?search_query=ti:transformer&max_results=1",
         "Semantic Scholar":   "https://api.semanticscholar.org/graph/v1/paper/649def34f8be52c8b66281af98ae884c09aef38b?fields=title",
         "Papers with Code":   "https://paperswithcode.com/api/v1/papers/?limit=1",
@@ -448,7 +449,7 @@ async def api_health(_: dict = Depends(require_admin)):
     headers = {"User-Agent": "AI-Research-Intelligence/1.0"}
 
     async with httpx.AsyncClient(headers=headers, timeout=8) as client:
-        for name, url in checks.items():
+        for name, url in http_checks.items():
             t0 = time.monotonic()
             try:
                 resp = await client.get(url)
@@ -458,7 +459,117 @@ async def api_health(_: dict = Depends(require_admin)):
                 ms = int((time.monotonic() - t0) * 1000)
                 results[name] = {"ok": False, "status": 0, "latency_ms": ms, "error": str(e)[:80]}
 
+    # Turso (live DB query)
+    t0 = time.monotonic()
+    try:
+        count = await db.count("papers")
+        ms = int((time.monotonic() - t0) * 1000)
+        results["Turso"] = {"ok": True, "status": 200, "latency_ms": ms, "detail": f"{count} papers in DB"}
+    except Exception as e:
+        ms = int((time.monotonic() - t0) * 1000)
+        results["Turso"] = {"ok": False, "status": 0, "latency_ms": ms, "error": str(e)[:80]}
+
+    # Redis (ping)
+    t0 = time.monotonic()
+    try:
+        from app.core.redis_client import get_redis
+        r = await get_redis()
+        if r:
+            await r.ping()
+            ms = int((time.monotonic() - t0) * 1000)
+            results["Redis"] = {"ok": True, "status": 200, "latency_ms": ms, "detail": "ping OK"}
+        else:
+            results["Redis"] = {"ok": False, "status": 0, "latency_ms": 0, "detail": "not configured / unavailable"}
+    except Exception as e:
+        ms = int((time.monotonic() - t0) * 1000)
+        results["Redis"] = {"ok": False, "status": 0, "latency_ms": ms, "error": str(e)[:80]}
+
     return results
+
+
+@router.get("/service-config")
+async def service_config(_: dict = Depends(require_admin)):
+    """
+    Returns configuration status for all external services.
+    Masks sensitive credentials — only shows set/not-set and a safe preview.
+    """
+    from app.core.config import settings
+
+    def _mask(val: str, show: int = 6) -> str:
+        if not val or val in ("", "dev-secret-key-change-in-production"):
+            return None
+        return val[:show] + "…" + val[-4:] if len(val) > show + 4 else "•" * len(val)
+
+    def _set(val: str) -> bool:
+        return bool(val and val not in ("", "dev-secret-key-change-in-production",
+                                        "libsql://placeholder.turso.io", "redis://localhost:6379"))
+
+    configs = [
+        {
+            "key": "TURSO_DATABASE_URL",
+            "label": "Turso Database URL",
+            "service": "Turso",
+            "set": _set(settings.TURSO_DATABASE_URL),
+            "preview": _mask(settings.TURSO_DATABASE_URL, 20) if _set(settings.TURSO_DATABASE_URL) else None,
+            "required": True,
+            "description": "libsql:// connection string for the Turso edge database",
+        },
+        {
+            "key": "TURSO_AUTH_TOKEN",
+            "label": "Turso Auth Token",
+            "service": "Turso",
+            "set": _set(settings.TURSO_AUTH_TOKEN),
+            "preview": _mask(settings.TURSO_AUTH_TOKEN) if _set(settings.TURSO_AUTH_TOKEN) else None,
+            "required": True,
+            "description": "JWT bearer token for Turso database authentication",
+        },
+        {
+            "key": "OPENROUTER_API_KEY",
+            "label": "OpenRouter API Key",
+            "service": "OpenRouter",
+            "set": bool(settings.OPENROUTER_API_KEY),
+            "preview": _mask(settings.OPENROUTER_API_KEY) if settings.OPENROUTER_API_KEY else None,
+            "required": True,
+            "description": "sk-or-v1-… key for Gemini Flash Lite via OpenRouter",
+        },
+        {
+            "key": "SECRET_KEY",
+            "label": "JWT Secret Key",
+            "service": "Auth",
+            "set": _set(settings.SECRET_KEY),
+            "preview": None,
+            "required": True,
+            "description": "Used to sign admin/user JWT tokens. Change in production!",
+        },
+        {
+            "key": "ADMIN_EMAIL",
+            "label": "Admin Email",
+            "service": "Auth",
+            "set": bool(settings.ADMIN_EMAIL),
+            "preview": settings.ADMIN_EMAIL,
+            "required": True,
+            "description": "Email address for the default admin account",
+        },
+        {
+            "key": "REDIS_URL",
+            "label": "Redis URL",
+            "service": "Redis",
+            "set": _set(settings.REDIS_URL),
+            "preview": settings.REDIS_URL if _set(settings.REDIS_URL) else None,
+            "required": False,
+            "description": "redis:// connection string. Optional — caching disabled if missing",
+        },
+        {
+            "key": "FRONTEND_URL",
+            "label": "Frontend URL (CORS)",
+            "service": "CORS",
+            "set": bool(settings.FRONTEND_URL),
+            "preview": settings.FRONTEND_URL or None,
+            "required": False,
+            "description": "Comma-separated allowed frontend origins for CORS",
+        },
+    ]
+    return configs
 
 
 @router.post("/reset-failed-enrichment")

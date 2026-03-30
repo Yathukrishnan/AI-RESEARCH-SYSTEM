@@ -104,6 +104,7 @@ export const adminApi = {
   getSocialSignals: () => api.get('/admin/social-signals'),
   triggerSocialSignals: (batch = 200) => api.post(`/admin/trigger-social-signals?batch=${batch}`),
   getApiHealth: () => api.get('/admin/api-health'),
+  getServiceConfig: () => api.get('/admin/service-config'),
 }
 
 export default api
