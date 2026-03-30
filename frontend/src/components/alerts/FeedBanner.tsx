@@ -1,96 +1,138 @@
 /**
- * FeedBanner — single combined component replacing both HookRotator + AlertBanner.
+ * FeedBanner — ONE unified rotating banner replacing both HookRotator + AlertBanner.
  *
- * Row 1: Auto-rotating daily hooks (paper headlines, cycle every 6 s).
- * Row 2: Three category tiles — Trending / Hidden Gems / New Papers.
- *         Each tile click → /papers/:type list page.
+ * Cycles through a merged list every 6 seconds:
+ *   – Paper hooks from daily_hooks  → click opens paper detail
+ *   – Category hooks (trending/gems/new/rising) → click opens category list page
+ *
+ * Category hooks are injected at regular intervals so users see them naturally
+ * while browsing through paper headlines.
  */
 import { useEffect, useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ChevronLeft, ChevronRight, X, Flame, Gem, Zap, TrendingUp, ArrowRight } from 'lucide-react'
+import { ChevronLeft, ChevronRight, X, ArrowRight } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { hooksApi, feedApi } from '@/lib/api'
+import { hooksApi } from '@/lib/api'
 import { DailyHook } from '@/lib/types'
 
 const ROTATE_MS = 6000
 
-// ── Category tiles ────────────────────────────────────────────────────────────
-const CATEGORIES = [
-  {
-    type: 'trending',
-    emoji: '🔥',
-    icon: Flame,
-    label: 'Trending Papers',
-    hooks: [
-      'Top-ranked papers the field is reading right now',
-      'The AI community is moving fast — see what\'s hot',
-      'High-signal papers climbing the rankings',
-      'What researchers are citing and sharing this week',
-      'Papers with the most community momentum',
-    ],
-    color: 'text-orange-400',
-    border: 'border-orange-500/25',
-    bg: 'hover:bg-orange-500/8 bg-orange-500/4',
-  },
-  {
-    type: 'gems',
-    emoji: '💎',
-    icon: Gem,
-    label: 'Hidden Gems',
-    hooks: [
-      'High-impact work that hasn\'t gone viral — yet',
-      'Strong signal, low noise — undiscovered research',
-      'Brilliant papers flying under the radar',
-      'Before everyone else finds these',
-      'Overlooked papers with exceptional scores',
-    ],
-    color: 'text-purple-400',
-    border: 'border-purple-500/25',
-    bg: 'hover:bg-purple-500/8 bg-purple-500/4',
-  },
-  {
-    type: 'new',
-    emoji: '✨',
-    icon: Zap,
-    label: 'New Papers',
-    hooks: [
-      'Fresh arXiv submissions, scored and ranked',
-      'Latest research just landed in the feed',
-      'New papers added since yesterday',
-      'Just in — newest AI & ML pre-prints',
-      'Hot off the press — today\'s new additions',
-    ],
-    color: 'text-cyan-400',
-    border: 'border-cyan-500/25',
-    bg: 'hover:bg-cyan-500/8 bg-cyan-500/4',
-  },
-  {
-    type: 'rising',
-    emoji: '📈',
-    icon: TrendingUp,
-    label: 'Rising Fast',
-    hooks: [
-      'Papers gaining momentum across the field',
-      'Rising stars in this week\'s rankings',
-      'Scores accelerating — papers to watch',
-      'Early movers gaining traction right now',
-      'These papers are climbing fast',
-    ],
-    color: 'text-green-400',
-    border: 'border-green-500/25',
-    bg: 'hover:bg-green-500/8 bg-green-500/4',
-  },
-]
-
-// Pick a hook for a category tile based on today's date (rotates daily)
-function getDailyHook(hooks: string[]): string {
-  const dayIndex = Math.floor(Date.now() / 86400000) // days since epoch
-  return hooks[dayIndex % hooks.length]
+// ── Category hook definitions ─────────────────────────────────────────────────
+interface CategoryItem {
+  kind: 'category'
+  type: 'trending' | 'gems' | 'new' | 'rising'
+  emoji: string
+  section_label: string
+  hook_text: string
+  style: string
 }
 
-// ── Hook rotator row ──────────────────────────────────────────────────────────
-function HookRow() {
-  const [hooks, setHooks] = useState<DailyHook[]>([])
+interface PaperItem extends DailyHook {
+  kind: 'paper'
+}
+
+type BannerItem = CategoryItem | PaperItem
+
+// Each category has several daily-rotating hooks
+const CATEGORY_HOOKS: Record<string, { emoji: string; label: string; style: string; hooks: string[] }> = {
+  trending: {
+    emoji: '🔥',
+    label: 'Trending Papers',
+    style: 'border-orange-500/35 bg-orange-500/6',
+    hooks: [
+      "Top trending papers are here — see what the field is buzzing about!",
+      "This week's highest-ranked papers in AI research",
+      "The community has spoken — explore the top trending papers",
+      "What researchers are reading and citing right now",
+      "Hot papers climbing the rankings — don't miss them",
+    ],
+  },
+  gems: {
+    emoji: '💎',
+    label: 'Hidden Gems',
+    style: 'border-purple-500/35 bg-purple-500/6',
+    hooks: [
+      "Hidden gems this week — brilliant papers few have discovered yet",
+      "High-impact research flying under the radar — explore now",
+      "Before everyone else finds these — undiscovered gems inside",
+      "Strong signal, low views — the overlooked papers worth reading",
+      "Overlooked but exceptional — this week's hidden gems",
+    ],
+  },
+  new: {
+    emoji: '✨',
+    label: 'New Papers',
+    style: 'border-cyan-500/35 bg-cyan-500/6',
+    hooks: [
+      "Fresh papers just landed — new arXiv submissions, scored and ranked",
+      "New this week — the latest AI research added to the feed",
+      "Just added: this week's newest pre-prints and submissions",
+      "Hot off the press — explore everything added in the last 7 days",
+      "Latest AI & ML research, freshly ranked for you",
+    ],
+  },
+  rising: {
+    emoji: '📈',
+    label: 'Rising Fast',
+    style: 'border-green-500/35 bg-green-500/6',
+    hooks: [
+      "Papers rising fast — these are gaining momentum this week",
+      "Rising stars in the rankings — papers to watch right now",
+      "Scores accelerating: these papers are on the move",
+      "Early movers gaining traction — get ahead of the trend",
+      "These papers are climbing fast — see what's rising",
+    ],
+  },
+}
+
+// Pick daily hook text (rotates each calendar day)
+function dailyCategoryHook(type: string): CategoryItem {
+  const cat = CATEGORY_HOOKS[type]
+  const dayIndex = Math.floor(Date.now() / 86_400_000)
+  return {
+    kind: 'category',
+    type: type as CategoryItem['type'],
+    emoji: cat.emoji,
+    section_label: cat.label,
+    hook_text: cat.hooks[dayIndex % cat.hooks.length],
+    style: cat.style,
+  }
+}
+
+// Build merged item list: inject a category hook every N paper hooks
+function buildItems(paperHooks: DailyHook[]): BannerItem[] {
+  const categories: CategoryItem['type'][] = ['trending', 'gems', 'new', 'rising']
+  const papers: PaperItem[] = paperHooks.map((h) => ({ ...h, kind: 'paper' as const }))
+
+  if (papers.length === 0) {
+    // No paper hooks yet — show just category hooks
+    return categories.map(dailyCategoryHook)
+  }
+
+  // Inject one category hook every 4 paper hooks
+  const result: BannerItem[] = []
+  let catIdx = 0
+  for (let i = 0; i < papers.length; i++) {
+    if (i % 4 === 0 && catIdx < categories.length) {
+      result.push(dailyCategoryHook(categories[catIdx++]))
+    }
+    result.push(papers[i])
+  }
+  return result
+}
+
+// Style for paper hooks
+function paperStyle(label: string) {
+  if (label.includes('Trending')) return 'border-orange-500/30 bg-orange-500/5'
+  if (label.includes('Gems'))     return 'border-purple-500/30 bg-purple-500/5'
+  if (label.includes('Added'))    return 'border-cyan-500/30 bg-cyan-500/5'
+  if (label.includes('Rising'))   return 'border-green-500/30 bg-green-500/5'
+  return 'border-accent/25 bg-accent/5'
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
+export function FeedBanner() {
+  const [items, setItems] = useState<BannerItem[]>([])
   const [current, setCurrent] = useState(0)
   const [dismissed, setDismissed] = useState(false)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -98,42 +140,44 @@ function HookRow() {
 
   useEffect(() => {
     hooksApi.getToday()
-      .then((r) => setHooks(r.data?.hooks || []))
-      .catch(() => {})
+      .then((r) => {
+        const hooks: DailyHook[] = r.data?.hooks || []
+        setItems(buildItems(hooks))
+      })
+      .catch(() => {
+        // Fallback: show only category hooks
+        setItems((['trending', 'gems', 'new', 'rising'] as const).map(dailyCategoryHook))
+      })
   }, [])
 
   useEffect(() => {
-    if (hooks.length <= 1) return
+    if (items.length <= 1) return
     timerRef.current = setInterval(() => {
-      setCurrent((c) => (c + 1) % hooks.length)
+      setCurrent((c) => (c + 1) % items.length)
     }, ROTATE_MS)
     return () => { if (timerRef.current) clearInterval(timerRef.current) }
-  }, [hooks.length])
+  }, [items.length])
 
-  if (!hooks.length || dismissed) return null
+  if (!items.length || dismissed) return null
 
-  const hook = hooks[current]
+  const item = items[current]
+  const isCategory = item.kind === 'category'
+  const style = isCategory ? item.style : paperStyle(item.section_label)
 
-  // Color based on section_label
-  const style = hook.section_label.includes('Trending')
-    ? 'border-orange-500/30 bg-orange-500/5'
-    : hook.section_label.includes('Gems')
-    ? 'border-purple-500/30 bg-purple-500/5'
-    : hook.section_label.includes('Added')
-    ? 'border-cyan-500/30 bg-cyan-500/5'
-    : hook.section_label.includes('Rising')
-    ? 'border-green-500/30 bg-green-500/5'
-    : 'border-accent/25 bg-accent/5'
-
-  const prev = (e: React.MouseEvent) => {
-    e.stopPropagation()
-    if (timerRef.current) clearInterval(timerRef.current)
-    setCurrent((c) => (c - 1 + hooks.length) % hooks.length)
+  const handleClick = () => {
+    if (isCategory) {
+      navigate(`/papers/${item.type}`)
+    } else if ((item as PaperItem).paper_id) {
+      navigate(`/paper/${(item as PaperItem).paper_id}`)
+    }
   }
-  const next = (e: React.MouseEvent) => {
+
+  const go = (dir: 1 | -1, e: React.MouseEvent) => {
     e.stopPropagation()
-    if (timerRef.current) clearInterval(timerRef.current)
-    setCurrent((c) => (c + 1) % hooks.length)
+    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
+    setCurrent((c) => (c + dir + items.length) % items.length)
+    // Resume auto-rotate after manual nav
+    timerRef.current = setInterval(() => setCurrent((c) => (c + 1) % items.length), ROTATE_MS)
   }
 
   return (
@@ -143,37 +187,50 @@ function HookRow() {
         initial={{ opacity: 0, y: -6 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: -6 }}
-        transition={{ duration: 0.28 }}
-        onClick={() => hook.paper_id && navigate(`/paper/${hook.paper_id}`)}
+        transition={{ duration: 0.25 }}
+        onClick={handleClick}
         className={`w-full rounded-xl px-4 py-3 border flex items-center gap-3 cursor-pointer group ${style}`}
       >
-        <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-white/8 text-white/80 whitespace-nowrap shrink-0">
-          {hook.section_label}
+        {/* Label pill */}
+        <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-white/8 text-white/80 whitespace-nowrap shrink-0 flex items-center gap-1">
+          {item.section_label}
         </span>
+
+        {/* Hook text */}
         <p className="flex-1 text-sm text-white font-semibold leading-tight line-clamp-1 group-hover:text-white/80 transition-colors">
-          {hook.hook_text}
+          {item.hook_text}
         </p>
+
+        {/* "View list" arrow for category items */}
+        {isCategory && (
+          <span className="hidden sm:flex items-center gap-1 text-[11px] text-white/40 group-hover:text-white/70 transition-colors shrink-0">
+            View list <ArrowRight size={10} />
+          </span>
+        )}
+
+        {/* Progress dots + nav */}
         <div className="flex items-center gap-1 shrink-0">
-          {hooks.length > 1 && (
-            <div className="hidden sm:flex items-center gap-1 mr-1">
-              {hooks.map((_, i) => (
-                <div
-                  key={i}
-                  className={`rounded-full transition-all duration-300 ${i === current ? 'w-4 h-1.5 bg-white/50' : 'w-1.5 h-1.5 bg-white/15'}`}
-                />
-              ))}
-            </div>
-          )}
-          {hooks.length > 1 && (
-            <>
-              <button onClick={prev} className="p-1 hover:bg-white/10 rounded-lg transition-all">
-                <ChevronLeft size={13} className="text-white/50 hover:text-white" />
-              </button>
-              <button onClick={next} className="p-1 hover:bg-white/10 rounded-lg transition-all">
-                <ChevronRight size={13} className="text-white/50 hover:text-white" />
-              </button>
-            </>
-          )}
+          <div className="hidden sm:flex items-center gap-1 mr-1">
+            {items.map((_, i) => (
+              <div
+                key={i}
+                className={`rounded-full transition-all duration-300 ${
+                  i === current
+                    ? 'w-4 h-1.5 bg-white/50'
+                    : items[i].kind === 'category'
+                    ? 'w-2 h-1.5 bg-white/30'   // slightly larger dot for category items
+                    : 'w-1.5 h-1.5 bg-white/15'
+                }`}
+              />
+            ))}
+          </div>
+
+          <button onClick={(e) => go(-1, e)} className="p-1 hover:bg-white/10 rounded-lg transition-all">
+            <ChevronLeft size={13} className="text-white/50 hover:text-white" />
+          </button>
+          <button onClick={(e) => go(1, e)} className="p-1 hover:bg-white/10 rounded-lg transition-all">
+            <ChevronRight size={13} className="text-white/50 hover:text-white" />
+          </button>
           <button
             onClick={(e) => { e.stopPropagation(); setDismissed(true) }}
             className="p-1 hover:bg-white/10 rounded-lg transition-all ml-0.5"
@@ -183,73 +240,5 @@ function HookRow() {
         </div>
       </motion.div>
     </AnimatePresence>
-  )
-}
-
-// ── Category tile ─────────────────────────────────────────────────────────────
-function CategoryTile({ cat, count }: {
-  cat: typeof CATEGORIES[number]
-  count: number | null
-}) {
-  const navigate = useNavigate()
-  const Icon = cat.icon
-  const hookText = getDailyHook(cat.hooks)
-
-  return (
-    <motion.button
-      whileHover={{ scale: 1.01 }}
-      whileTap={{ scale: 0.98 }}
-      onClick={() => navigate(`/papers/${cat.type}`)}
-      className={`flex-1 min-w-[140px] text-left rounded-xl border px-4 py-3.5 transition-all group ${cat.border} ${cat.bg}`}
-    >
-      <div className="flex items-start justify-between gap-2 mb-2">
-        <div className="flex items-center gap-1.5">
-          <Icon size={13} className={cat.color} />
-          <span className={`text-xs font-bold ${cat.color}`}>{cat.label}</span>
-        </div>
-        {count !== null && (
-          <span className="text-[10px] text-muted shrink-0">{count.toLocaleString()} papers</span>
-        )}
-      </div>
-      <p className="text-xs text-white/80 leading-relaxed line-clamp-2 group-hover:text-white transition-colors">
-        {hookText}
-      </p>
-      <div className="flex items-center gap-1 mt-2 text-[10px] text-muted group-hover:text-white/60 transition-colors">
-        View list <ArrowRight size={9} />
-      </div>
-    </motion.button>
-  )
-}
-
-// ── Main FeedBanner ───────────────────────────────────────────────────────────
-export function FeedBanner() {
-  const [counts, setCounts] = useState<Record<string, number | null>>({
-    trending: null, gems: null, new: null, rising: null,
-  })
-
-  useEffect(() => {
-    // Load counts for each category tile from stats + quick counts
-    Promise.allSettled([
-      feedApi.getStats(),
-    ]).then(([statsRes]) => {
-      if (statsRes.status === 'fulfilled') {
-        const s = statsRes.value.data
-        setCounts((prev) => ({ ...prev, trending: s.trending_papers ?? null }))
-      }
-    })
-  }, [])
-
-  return (
-    <div className="space-y-2.5">
-      {/* Row 1: Auto-rotating daily paper hooks */}
-      <HookRow />
-
-      {/* Row 2: Category tiles */}
-      <div className="flex gap-2 flex-wrap sm:flex-nowrap">
-        {CATEGORIES.map((cat) => (
-          <CategoryTile key={cat.type} cat={cat} count={cat.type === 'trending' ? counts.trending : null} />
-        ))}
-      </div>
-    </div>
   )
 }
