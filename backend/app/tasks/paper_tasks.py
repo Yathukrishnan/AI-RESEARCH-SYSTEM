@@ -206,11 +206,24 @@ async def enrich_pending_papers(batch_size: int = 500):
         chunk = old_papers[chunk_start:chunk_start + SS_BATCH_SIZE]
         chunk_arxiv_ids = [p["arxiv_id"] for p in chunk]
 
-        # Run SS batch and PwC concurrent calls in parallel
-        ss_map, github_map = await asyncio.gather(
-            enricher.get_semantic_scholar_batch(chunk_arxiv_ids),
+        # Run SS batch (extended with author data) and PwC concurrent calls in parallel
+        (ss_map, paper_author_map, author_name_map, h_map), github_map = await asyncio.gather(
+            enricher.get_semantic_scholar_batch_extended(chunk_arxiv_ids),
             enricher.get_github_data_concurrent(chunk),
         )
+
+        # Upsert author h-indices into paper_authors cache table
+        _author_now = datetime.now(timezone.utc).isoformat()
+        for ss_id, h_val in h_map.items():
+            try:
+                name = author_name_map.get(ss_id, "")
+                await turso_db.execute(
+                    "INSERT INTO paper_authors (ss_author_id, name, h_index, last_updated) VALUES (?, ?, ?, ?) "
+                    "ON CONFLICT(ss_author_id) DO UPDATE SET h_index=excluded.h_index, last_updated=excluded.last_updated",
+                    [ss_id, name, h_val, _author_now]
+                )
+            except Exception:
+                pass
 
         for p in chunk:
             aid = p["arxiv_id"]
@@ -457,6 +470,106 @@ async def generate_missing_hooks(batch_size: int = 500, force: bool = False) -> 
     count = sum(1 for r in results if r is True)
     logger.info(f"Hook gen: done — {count}/{len(rows)} hooks generated")
     return count
+
+
+async def refresh_social_signals(batch_size: int = 200) -> int:
+    """
+    Fetch HuggingFace upvotes, HackerNews discussion, and OpenAlex citation velocity
+    for top scored papers. Computes category scores (trending/rising/gem/platform)
+    and stores them in DB. Called every 4h by the scheduler.
+    """
+    rows = await turso_db.fetchall(
+        "SELECT rowid as id, arxiv_id, title, normalized_score, "
+        "view_count, save_count, click_count, citation_count, github_stars, published_at "
+        "FROM papers "
+        "WHERE is_deleted = 0 AND is_duplicate = 0 AND is_above_threshold = 1 "
+        "AND (social_checked_at IS NULL OR social_checked_at < datetime('now', '-6 hours')) "
+        "ORDER BY normalized_score DESC LIMIT ?",
+        [batch_size]
+    )
+    if not rows:
+        logger.info("Social signals: no papers need refresh")
+        return 0
+
+    logger.info(f"Social signals: refreshing {len(rows)} papers…")
+    enricher = EnrichmentService(settings.SEMANTIC_SCHOLAR_API_URL, settings.PAPERS_WITH_CODE_API_URL)
+    sem = asyncio.Semaphore(5)
+    now = datetime.now(timezone.utc).isoformat()
+
+    from app.services.scorer import (
+        compute_trending_score, compute_rising_score,
+        compute_gem_score, compute_platform_score,
+    )
+
+    async def _fetch_one(p: dict):
+        async with sem:
+            await asyncio.sleep(0.1)
+            try:
+                hf_data, hn_data, oa_data = await asyncio.gather(
+                    enricher.get_huggingface_data(p["arxiv_id"]),
+                    enricher.get_hackernews_data(p["arxiv_id"], p["title"]),
+                    enricher.get_openalex_data(p["arxiv_id"]),
+                    return_exceptions=True,
+                )
+                hf = hf_data if isinstance(hf_data, dict) else {"hf_upvotes": 0}
+                hn = hn_data if isinstance(hn_data, dict) else {"hn_points": 0, "hn_comments": 0}
+                oa = oa_data if isinstance(oa_data, dict) else {"citation_velocity": 0.0, "openalex_citation_count": 0}
+
+                enriched = dict(p)
+                enriched.update(hf)
+                enriched.update(hn)
+                enriched.update(oa)
+
+                # Use best citation count (OpenAlex often has more recent data)
+                best_citations = max(
+                    int(p.get("citation_count") or 0),
+                    oa.get("openalex_citation_count", 0)
+                )
+                enriched["citation_count"] = best_citations
+
+                return {
+                    "id": p["id"],
+                    "hf_upvotes": hf["hf_upvotes"],
+                    "hn_points": hn["hn_points"],
+                    "hn_comments": hn["hn_comments"],
+                    "citation_velocity": oa["citation_velocity"],
+                    "trending_score": compute_trending_score(enriched),
+                    "rising_score": compute_rising_score(enriched),
+                    "gem_score": compute_gem_score(enriched),
+                    "platform_score": compute_platform_score(enriched),
+                }
+            except Exception as e:
+                logger.debug(f"Social signal error {p.get('arxiv_id')}: {e}")
+                return None
+
+    raw_results = await asyncio.gather(*[_fetch_one(p) for p in rows], return_exceptions=True)
+    updates = [r for r in raw_results if isinstance(r, dict) and r]
+
+    # Batch DB updates
+    stmts = [
+        (
+            "UPDATE papers SET hf_upvotes=?, hn_points=?, hn_comments=?, citation_velocity=?, "
+            "trending_score=?, rising_score=?, gem_score=?, platform_score=?, social_checked_at=? "
+            "WHERE rowid=?",
+            [u["hf_upvotes"], u["hn_points"], u["hn_comments"], u["citation_velocity"],
+             u["trending_score"], u["rising_score"], u["gem_score"], u["platform_score"],
+             now, u["id"]],
+        )
+        for u in updates
+    ]
+    CHUNK = 100
+    for i in range(0, len(stmts), CHUNK):
+        try:
+            await turso_db.execute_many(stmts[i:i + CHUNK])
+        except Exception:
+            for stmt, params in stmts[i:i + CHUNK]:
+                try:
+                    await turso_db.execute(stmt, params)
+                except Exception as e:
+                    logger.error(f"Social signal DB update error: {e}")
+
+    logger.info(f"Social signals: updated {len(updates)}/{len(rows)} papers")
+    return len(updates)
 
 
 async def process_single_paper(arxiv_id: str):

@@ -93,3 +93,59 @@ def normalize_batch(papers: list) -> list:
         for p in papers:
             p["normalized_score"] = round((float(p.get("current_score") or 0) - mn) / (mx - mn), 4)
     return papers
+
+
+def compute_trending_score(row: dict) -> float:
+    """Social velocity signal: HF upvotes + HN discussion + citation velocity."""
+    hf = _log_norm(float(row.get("hf_upvotes") or 0), 100)
+    hn = _log_norm(
+        float(row.get("hn_points") or 0) + float(row.get("hn_comments") or 0) * 0.5,
+        200
+    )
+    cit_vel = min(1.0, max(0.0, float(row.get("citation_velocity") or 0)))
+    age = _age_days(row.get("published_at"))
+    freshness = math.exp(-0.05 * max(0.0, age))  # decays over ~20 days
+    raw = 0.40 * hf + 0.30 * hn + 0.30 * cit_vel
+    return round(min(1.0, raw * (1.0 + 0.5 * freshness)), 4)
+
+
+def compute_rising_score(row: dict) -> float:
+    """Momentum signal: citation velocity + HF growth + quality baseline."""
+    cit_vel = min(1.0, max(0.0, float(row.get("citation_velocity") or 0)))
+    star_vel = min(1.0, max(0.0, float(row.get("star_velocity") or 0)))
+    hf = _log_norm(float(row.get("hf_upvotes") or 0), 100)
+    quality = float(row.get("normalized_score") or 0)
+    age = _age_days(row.get("published_at"))
+    decay = math.exp(-0.02 * max(0.0, age - 7))  # moderate decay after 1 week
+    raw = 0.40 * cit_vel + 0.25 * star_vel + 0.20 * hf + 0.15 * quality
+    return round(min(1.0, raw * decay), 4)
+
+
+def compute_gem_score(row: dict) -> float:
+    """Hidden gem: high quality × low external attention."""
+    quality = float(row.get("normalized_score") or 0)
+    views = float(row.get("view_count") or 0)
+    saves = float(row.get("save_count") or 0)
+    hf = float(row.get("hf_upvotes") or 0)
+    hn = float(row.get("hn_points") or 0)
+    # Attention = how much external visibility the paper already has
+    attention = min(1.0, (views / 100.0 + saves / 20.0 + hf / 50.0 + hn / 50.0) / 4.0)
+    return round(min(1.0, quality * quality * (1.0 - attention * 0.8)), 4)
+
+
+def compute_platform_score(row: dict) -> float:
+    """In-app engagement: views, saves, clicks."""
+    views = _log_norm(float(row.get("view_count") or 0), 500)
+    saves = _log_norm(float(row.get("save_count") or 0), 50)
+    clicks = _log_norm(float(row.get("click_count") or 0), 100)
+    return round(min(1.0, 0.50 * views + 0.30 * saves + 0.20 * clicks), 4)
+
+
+def compute_all_category_scores(row: dict) -> dict:
+    """Compute all four category scores from a paper row."""
+    return {
+        "trending_score": compute_trending_score(row),
+        "rising_score":   compute_rising_score(row),
+        "gem_score":      compute_gem_score(row),
+        "platform_score": compute_platform_score(row),
+    }

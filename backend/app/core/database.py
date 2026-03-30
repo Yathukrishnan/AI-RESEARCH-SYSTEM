@@ -158,6 +158,16 @@ CREATE TABLE IF NOT EXISTS arxiv_subjects (
 )
 """
 
+CREATE_AUTHORS = """
+CREATE TABLE IF NOT EXISTS paper_authors (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ss_author_id TEXT UNIQUE NOT NULL,
+    name TEXT,
+    h_index REAL DEFAULT 0.0,
+    last_updated TEXT DEFAULT (datetime('now'))
+)
+"""
+
 # Columns to add if missing (safe migrations)
 ENSURE_COLUMNS = [
     ("papers", "current_score",        "REAL",    "0.0"),
@@ -206,6 +216,17 @@ ENSURE_COLUMNS = [
     ("papers", "journal_ref",          "TEXT",    "NULL"),
     ("papers", "created_at",           "TEXT",    "NULL"),
     ("papers", "influential_citation_count", "INTEGER", "0"),
+    # Social signal columns
+    ("papers", "hf_upvotes",        "INTEGER", "0"),
+    ("papers", "hn_points",         "INTEGER", "0"),
+    ("papers", "hn_comments",       "INTEGER", "0"),
+    ("papers", "citation_velocity", "REAL",    "0.0"),
+    ("papers", "star_velocity",     "REAL",    "0.0"),
+    ("papers", "trending_score",    "REAL",    "0.0"),
+    ("papers", "rising_score",      "REAL",    "0.0"),
+    ("papers", "gem_score",         "REAL",    "0.0"),
+    ("papers", "platform_score",    "REAL",    "0.0"),
+    ("papers", "social_checked_at", "TEXT",    "NULL"),
 ]
 
 
@@ -219,7 +240,7 @@ async def init_db():
     # 2. Create tables
     for ddl in [CREATE_PAPERS, CREATE_SCORE_HISTORY, CREATE_USERS,
                 CREATE_INTERACTIONS, CREATE_ALERTS, CREATE_CONFIG,
-                CREATE_KEYWORDS, CREATE_ANALYSIS_LOG, CREATE_SUBJECTS]:
+                CREATE_KEYWORDS, CREATE_ANALYSIS_LOG, CREATE_SUBJECTS, CREATE_AUTHORS]:
         try:
             await db.execute(ddl)
         except Exception as e:

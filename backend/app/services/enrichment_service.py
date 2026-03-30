@@ -265,6 +265,140 @@ class EnrichmentService:
             pass
         return None
 
+    # ── HuggingFace Papers ─────────────────────────────────────────────────
+
+    async def get_huggingface_data(self, arxiv_id: str) -> Dict:
+        """Fetch upvotes from HuggingFace Papers (free, no auth)."""
+        try:
+            async with httpx.AsyncClient(headers=self.headers, timeout=10) as client:
+                resp = await client.get(f"https://huggingface.co/api/papers/{arxiv_id}")
+                if resp.status_code == 200:
+                    data = resp.json()
+                    return {"hf_upvotes": int(data.get("upvotes") or 0)}
+        except Exception as e:
+            logger.debug(f"HF fetch error {arxiv_id}: {e}")
+        return {"hf_upvotes": 0}
+
+    # ── HackerNews Algolia ─────────────────────────────────────────────────
+
+    async def get_hackernews_data(self, arxiv_id: str, title: str) -> Dict:
+        """Search HackerNews for paper discussion via Algolia API (free, no auth)."""
+        try:
+            async with httpx.AsyncClient(headers=self.headers, timeout=10) as client:
+                resp = await client.get(
+                    "https://hn.algolia.com/api/v1/search",
+                    params={"query": f"arxiv.org/abs/{arxiv_id}", "tags": "story", "hitsPerPage": 5},
+                )
+                if resp.status_code == 200:
+                    hits = resp.json().get("hits") or []
+                    points = sum(int(h.get("points") or 0) for h in hits)
+                    comments = sum(int(h.get("num_comments") or 0) for h in hits)
+                    return {"hn_points": points, "hn_comments": comments}
+        except Exception as e:
+            logger.debug(f"HN fetch error {arxiv_id}: {e}")
+        return {"hn_points": 0, "hn_comments": 0}
+
+    # ── OpenAlex ───────────────────────────────────────────────────────────
+
+    async def get_openalex_data(self, arxiv_id: str) -> Dict:
+        """
+        Fetch citation count + year-over-year velocity from OpenAlex.
+        Free, no auth — 100k requests/day. Uses polite pool via User-Agent email.
+        """
+        try:
+            from datetime import datetime
+            hdrs = {**self.headers, "User-Agent": "AI-Research-Intelligence/1.0 (mailto:research@ai.system)"}
+            async with httpx.AsyncClient(headers=hdrs, timeout=15) as client:
+                resp = await client.get(
+                    f"https://api.openalex.org/works/arxiv:{arxiv_id}",
+                    params={"select": "id,cited_by_count,counts_by_year"},
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    cited_by = int(data.get("cited_by_count") or 0)
+                    counts = data.get("counts_by_year") or []
+                    cur_year = datetime.now().year
+                    this_yr = next((c["cited_by_count"] for c in counts if c.get("year") == cur_year), 0)
+                    last_yr = next((c["cited_by_count"] for c in counts if c.get("year") == cur_year - 1), 0)
+                    velocity = min(1.0, this_yr / max(last_yr, 1)) if this_yr > 0 else 0.0
+                    return {
+                        "openalex_citation_count": cited_by,
+                        "citation_velocity": round(velocity, 4),
+                    }
+        except Exception as e:
+            logger.debug(f"OpenAlex fetch error {arxiv_id}: {e}")
+        return {"openalex_citation_count": 0, "citation_velocity": 0.0}
+
+    # ── Author cache (paper_authors table) ────────────────────────────────
+
+    async def get_semantic_scholar_batch_extended(
+        self, arxiv_ids: List[str]
+    ) -> tuple:
+        """
+        Like get_semantic_scholar_batch but also returns (paper_author_map, author_name_map, h_map)
+        for populating the paper_authors cache table.
+        Returns: (result_map, paper_author_map, author_name_map, h_map)
+        """
+        if not arxiv_ids:
+            return {}, {}, {}, {}
+
+        ids = [f"ARXIV:{aid}" for aid in arxiv_ids]
+        async with httpx.AsyncClient(headers=self.headers, timeout=30) as client:
+            try:
+                resp = await client.post(
+                    f"{self.ss_url}/paper/batch",
+                    json={"ids": ids},
+                    params={"fields": "citationCount,influentialCitationCount,authors"},
+                )
+            except Exception as e:
+                logger.warning(f"SS batch extended error: {e}")
+                return {}, {}, {}, {}
+
+            if resp.status_code == 429:
+                await asyncio.sleep(int(resp.headers.get("Retry-After", 60)))
+                return {}, {}, {}, {}
+            if resp.status_code != 200:
+                return {}, {}, {}, {}
+
+            raw = resp.json()
+            result_map: Dict[str, Dict] = {}
+            all_author_ids: List[str] = []
+            paper_author_map: Dict[str, List[str]] = {}
+            author_name_map: Dict[str, str] = {}
+
+            for i, item in enumerate(raw):
+                if i >= len(arxiv_ids):
+                    break
+                arxiv_id = arxiv_ids[i]
+                if not item or not isinstance(item, dict):
+                    result_map[arxiv_id] = {"citation_count": 0, "influential_citation_count": 0, "h_index_max": 0.0}
+                    continue
+                authors = item.get("authors") or []
+                author_ids = []
+                for a in authors[:5]:
+                    aid = a.get("authorId")
+                    if aid:
+                        author_ids.append(aid)
+                        if a.get("name"):
+                            author_name_map[aid] = a["name"]
+                paper_author_map[arxiv_id] = author_ids
+                all_author_ids.extend(author_ids)
+                result_map[arxiv_id] = {
+                    "citation_count": int(item.get("citationCount") or 0),
+                    "influential_citation_count": int(item.get("influentialCitationCount") or 0),
+                    "h_index_max": 0.0,
+                }
+
+            h_map: Dict[str, float] = {}
+            if all_author_ids:
+                await asyncio.sleep(1.0)
+                h_map = await self._get_author_h_indices_batch(client, list(set(all_author_ids)))
+                for arxiv_id, author_ids in paper_author_map.items():
+                    hs = [h_map.get(aid, 0.0) for aid in author_ids]
+                    result_map[arxiv_id]["h_index_max"] = float(max(hs)) if hs else 0.0
+
+            return result_map, paper_author_map, author_name_map, h_map
+
     async def get_github_data(self, arxiv_id: str, title: str) -> Optional[Dict]:
         """Single PwC lookup (used for manual paper adds)."""
         await asyncio.sleep(0.5)

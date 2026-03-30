@@ -66,6 +66,19 @@ async def _daily_hook_generation():
         logger.error(f"Daily hook generation error: {e}")
 
 
+async def _social_signal_refresh():
+    """
+    Refresh HuggingFace, HackerNews, and OpenAlex signals for top papers.
+    Runs every 4 hours. Skips if social signals are already fresh.
+    """
+    try:
+        from app.tasks.paper_tasks import refresh_social_signals
+        count = await refresh_social_signals(batch_size=200)
+        logger.info(f"Social signal refresh: {count} papers updated")
+    except Exception as e:
+        logger.error(f"Social signal refresh error: {e}")
+
+
 async def _hourly_fetch_catchup():
     """
     Runs every hour. If today's daily_fetch hasn't completed yet AND it's
@@ -169,11 +182,21 @@ def setup_scheduler():
         misfire_grace_time=3600,
     )
 
+    # Social signal refresh every 4 hours: HF upvotes, HN discussion, OpenAlex velocity
+    scheduler.add_job(
+        _social_signal_refresh,
+        CronTrigger(hour="*/4", minute=45, timezone="UTC"),
+        id="social_signals",
+        replace_existing=True,
+        coalesce=True,
+        misfire_grace_time=7200,
+    )
+
     logger.info(
         "Scheduler configured: daily_fetch(02:30 UTC / 08:00 IST), "
         "daily_hooks(03:15 UTC), hourly_fetch_catchup(:35 each hour), "
-        "weekly_rescore(Sun 02:00 UTC), weekly_content_transition(Mon 00:05 UTC), "
-        "enrich_pending(hourly)"
+        "weekly_rescore(Sun 02:00 UTC), weekly_content_transition(Tue 00:05 UTC), "
+        "enrich_pending(hourly), social_signals(every 4h at :45)"
     )
 
 

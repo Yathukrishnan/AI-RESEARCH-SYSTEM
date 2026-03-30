@@ -236,6 +236,21 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Hook generation startup check failed (non-fatal): {e}")
 
+    # 9. Refresh social signals (HF, HN, OpenAlex) for visible papers that haven't been checked
+    try:
+        social_needed = await turso_db.count(
+            "papers",
+            "is_deleted = 0 AND is_duplicate = 0 AND is_above_threshold = 1 AND social_checked_at IS NULL"
+        )
+        if social_needed > 0:
+            logger.info(f"Found {social_needed} papers without social signals → refreshing in background")
+            from app.tasks.paper_tasks import refresh_social_signals
+            asyncio.create_task(refresh_social_signals(batch_size=300))
+        else:
+            logger.info("Social signals up to date.")
+    except Exception as e:
+        logger.warning(f"Social signal startup check failed (non-fatal): {e}")
+
     logger.info("Startup complete.")
     yield
 

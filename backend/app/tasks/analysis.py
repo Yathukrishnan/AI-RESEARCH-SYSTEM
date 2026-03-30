@@ -290,44 +290,68 @@ async def assign_display_weeks(system_start: str) -> None:
 # ── Step 6: Trend labels ──────────────────────────────────────────────────────
 
 async def assign_trend_labels() -> None:
-    """Assign trend labels to top-scoring papers."""
-    # Top 5% by normalized_score → trending
+    """
+    Assign trend labels to papers.
+
+    Classification rules (in priority order):
+      1. Social signal boost: strong trending_score or rising_score overrides percentile thresholds
+      2. Percentile-based: top 5% → trending, next 10% → rising, next 15% (low views) → gem
+      3. Gem fallback: high gem_score with low views
+
+    All papers get their label (including NULL) written so stale labels are cleared.
+    """
     rows = await turso_db.fetchall(
-        "SELECT rowid as id, normalized_score, scr_value, view_count FROM papers "
-        "WHERE is_deleted = 0 AND is_duplicate = 0 AND normalized_score > 0 "
+        "SELECT rowid as id, normalized_score, view_count, "
+        "trending_score, rising_score, gem_score "
+        "FROM papers WHERE is_deleted = 0 AND is_duplicate = 0 AND normalized_score > 0 "
         "ORDER BY normalized_score DESC"
     )
     if not rows:
         return
 
     total = len(rows)
-    top5_threshold = rows[int(total * 0.05)]["normalized_score"] if total > 20 else 0.8
+    top5_threshold  = rows[int(total * 0.05)]["normalized_score"] if total > 20 else 0.80
     top15_threshold = rows[int(total * 0.15)]["normalized_score"] if total > 20 else 0.65
-    top30_threshold = rows[int(total * 0.30)]["normalized_score"] if total > 20 else 0.5
+    top30_threshold = rows[int(total * 0.30)]["normalized_score"] if total > 20 else 0.50
 
+    stmts = []
     for p in rows:
-        ns = float(p.get("normalized_score") or 0)
+        ns   = float(p.get("normalized_score") or 0)
         views = int(p.get("view_count") or 0)
-        scr = float(p.get("scr_value") or 0)
+        ts   = float(p.get("trending_score") or 0)
+        rs   = float(p.get("rising_score") or 0)
+        gs   = float(p.get("gem_score") or 0)
 
-        if ns >= top5_threshold:
+        # Strong social signal → trending, regardless of percentile
+        if ns >= top5_threshold or ts > 0.30:
             label = "🔥 Trending"
             is_trending = 1
-        elif ns >= top15_threshold:
+        elif ns >= top15_threshold or rs > 0.25:
             label = "📈 Rising"
             is_trending = 0
-        elif ns >= top30_threshold and views < 10:
+        elif (ns >= top30_threshold and views < 10) or (gs > 0.30 and views < 20):
             label = "💎 Hidden Gem"
             is_trending = 0
         else:
             label = None
             is_trending = 0
 
-        if label:
-            await turso_db.execute(
-                "UPDATE papers SET trend_label = ?, is_trending = ? WHERE rowid = ?",
-                [label, is_trending, p["id"]]
-            )
+        stmts.append((
+            "UPDATE papers SET trend_label = ?, is_trending = ? WHERE rowid = ?",
+            [label, is_trending, p["id"]],
+        ))
+
+    # Batch updates in chunks of 100
+    CHUNK = 100
+    for i in range(0, len(stmts), CHUNK):
+        try:
+            await turso_db.execute_many(stmts[i:i + CHUNK])
+        except Exception:
+            for stmt, params in stmts[i:i + CHUNK]:
+                try:
+                    await turso_db.execute(stmt, params)
+                except Exception as e:
+                    logger.error(f"Trend label update error: {e}")
 
 
 # ── Main pipeline ─────────────────────────────────────────────────────────────
