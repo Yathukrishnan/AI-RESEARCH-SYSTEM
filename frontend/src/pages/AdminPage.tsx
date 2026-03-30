@@ -1312,7 +1312,7 @@ function ConfigAdmin() {
           <div className="p-8 text-center text-muted text-sm">No configuration found</div>
         ) : (
           <div className="divide-y divide-accent/5">
-            {config.map((item) => (
+            {config.filter((item) => item.key !== 'OPENROUTER_API_URL').map((item) => (
               <div key={item.key} className="px-5 py-4 space-y-2">
                 <div>
                   <p className="text-sm font-medium text-white font-mono">{item.key}</p>
@@ -1751,18 +1751,6 @@ function ApisAdmin() {
       color: 'text-sky-400', border: 'border-sky-500/20', bg: 'bg-sky-500/8',
       category: 'Infrastructure',
     },
-    {
-      name: 'Redis',
-      configKey: null,
-      description: 'Optional in-memory cache for feed responses (5-min TTL). Gracefully disabled if not configured.',
-      defaultUrl: 'redis://localhost:6379  (set via REDIS_URL)',
-      docsUrl: 'https://redis.io/docs/',
-      rateLimit: 'N/A (local or managed)',
-      auth: 'Optional (REDIS_URL env var)',
-      icon: Zap,
-      color: 'text-red-400', border: 'border-red-500/20', bg: 'bg-red-500/8',
-      category: 'Infrastructure',
-    },
   ]
 
   const categoryMeta: Record<string, { label: string; color: string; desc: string }> = {
@@ -1798,7 +1786,7 @@ function ApisAdmin() {
         <div>
           <h1 className="text-xl font-bold text-white">APIs & Third-Party Services</h1>
           <p className="text-sm text-muted mt-1">
-            Every external service this system depends on — 8 total across 4 categories.
+            Every external service this system depends on — 7 total across 4 categories.
           </p>
         </div>
         <button
