@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Navbar } from '@/components/layout/Navbar'
 import { Feed } from '@/components/feed/Feed'
+import { PaperCard } from '@/components/feed/PaperCard'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Database, TrendingUp, Eye, Loader2, CheckCircle, Flame, Gem, Sparkles } from 'lucide-react'
+import { Database, TrendingUp, Eye, Loader2, CheckCircle, Flame, Gem, Sparkles, Search, X } from 'lucide-react'
 import { feedApi } from '@/lib/api'
 
 interface Stats {
@@ -40,6 +41,60 @@ export function HomePage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [stats, setStats] = useState<Stats | null>(null)
   const [polling, setPolling] = useState(false)
+
+  // Search state
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchInput, setSearchInput] = useState('')
+  const [searchResults, setSearchResults] = useState<any[]>([])
+  const [searchTotal, setSearchTotal] = useState(0)
+  const [searchLoading, setSearchLoading] = useState(false)
+  const [searchPage, setSearchPage] = useState(0)
+  const [searchHasMore, setSearchHasMore] = useState(false)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const runSearch = async (q: string, page = 0, append = false) => {
+    if (q.length < 2) return
+    setSearchLoading(true)
+    try {
+      const res = await feedApi.search(q, page)
+      const data = res.data
+      setSearchResults((prev) => append ? [...prev, ...data.papers] : data.papers)
+      setSearchHasMore(data.has_more)
+      setSearchTotal(data.total ?? data.papers.length)
+    } catch { /* silent */ } finally {
+      setSearchLoading(false)
+    }
+  }
+
+  const handleSearchChange = (val: string) => {
+    setSearchInput(val)
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    if (val.trim().length < 2) {
+      setSearchQuery('')
+      setSearchResults([])
+      return
+    }
+    debounceRef.current = setTimeout(() => {
+      setSearchQuery(val.trim())
+      setSearchPage(0)
+      runSearch(val.trim(), 0)
+    }, 350)
+  }
+
+  const clearSearch = () => {
+    setSearchInput('')
+    setSearchQuery('')
+    setSearchResults([])
+    setSearchPage(0)
+  }
+
+  const loadMoreSearch = () => {
+    const next = searchPage + 1
+    setSearchPage(next)
+    runSearch(searchQuery, next, true)
+  }
+
+  const isSearching = searchQuery.length >= 2
 
   const validFilters = ['all', 'trending', 'gems', 'new'] as const
   type Filter = typeof validFilters[number]
@@ -121,28 +176,57 @@ export function HomePage() {
             </motion.div>
           </div>
 
-          {/* Discovery filter tabs */}
+          {/* Search bar */}
           <motion.div
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4, delay: 0.18 }}
-            className="flex items-center gap-1.5 mt-5 overflow-x-auto pb-1"
-            style={{ scrollbarWidth: 'none' }}
+            transition={{ duration: 0.4, delay: 0.15 }}
+            className="mt-5"
           >
-            {filterTabs.map(({ id, label, icon: Icon, activeColor }) => (
-              <button
-                key={id}
-                onClick={() => setActiveFilter(id)}
-                className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium transition-all whitespace-nowrap border ${
-                  activeFilter === id
-                    ? activeColor
-                    : 'text-muted border-transparent hover:text-white hover:bg-surface'
-                }`}
-              >
-                <Icon size={13} /> {label}
-              </button>
-            ))}
+            <div className="relative">
+              <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
+              <input
+                type="text"
+                value={searchInput}
+                onChange={(e) => handleSearchChange(e.target.value)}
+                placeholder="Search by title, author, topic, category…"
+                className="w-full bg-surface border border-accent/20 rounded-xl py-2.5 pl-9 pr-10 text-sm text-white placeholder-muted focus:outline-none focus:border-accent/50 transition-all"
+              />
+              {searchInput && (
+                <button
+                  onClick={clearSearch}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-white transition-colors"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
           </motion.div>
+
+          {/* Discovery filter tabs — hidden during search */}
+          {!isSearching && (
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.18 }}
+              className="flex items-center gap-1.5 mt-3 overflow-x-auto pb-1"
+              style={{ scrollbarWidth: 'none' }}
+            >
+              {filterTabs.map(({ id, label, icon: Icon, activeColor }) => (
+                <button
+                  key={id}
+                  onClick={() => setActiveFilter(id)}
+                  className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium transition-all whitespace-nowrap border ${
+                    activeFilter === id
+                      ? activeColor
+                      : 'text-muted border-transparent hover:text-white hover:bg-surface'
+                  }`}
+                >
+                  <Icon size={13} /> {label}
+                </button>
+              ))}
+            </motion.div>
+          )}
         </div>
       </div>
 
@@ -188,9 +272,64 @@ export function HomePage() {
         )}
       </AnimatePresence>
 
-      {/* Feed */}
+      {/* Feed / Search results */}
       <main className="max-w-7xl mx-auto px-4 py-8">
-        <Feed filter={activeFilter} />
+        {isSearching ? (
+          <div className="space-y-6">
+            {/* Search header */}
+            <div className="flex items-center justify-between">
+              <div>
+                {searchLoading && searchResults.length === 0 ? (
+                  <p className="text-sm text-muted flex items-center gap-2">
+                    <Loader2 size={13} className="animate-spin" /> Searching…
+                  </p>
+                ) : (
+                  <p className="text-sm text-muted">
+                    <span className="text-white font-semibold">{searchTotal.toLocaleString()}</span> results for{' '}
+                    <span className="text-accent-2 font-semibold">"{searchQuery}"</span>
+                  </p>
+                )}
+              </div>
+              <button onClick={clearSearch} className="text-xs text-muted hover:text-white flex items-center gap-1 transition-colors">
+                <X size={12} /> Clear
+              </button>
+            </div>
+
+            {/* Results grid */}
+            {searchResults.length === 0 && !searchLoading ? (
+              <div className="flex flex-col items-center justify-center py-24 text-center">
+                <Search size={40} className="text-muted mb-4 opacity-30" />
+                <p className="text-white font-semibold mb-1">No results found</p>
+                <p className="text-muted text-sm">Try a different title, author name, or topic tag</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {searchResults.map((paper, i) => (
+                  <PaperCard key={paper.id} paper={paper} index={i} />
+                ))}
+              </div>
+            )}
+
+            {/* Load more */}
+            {searchHasMore && !searchLoading && (
+              <div className="flex justify-center">
+                <button
+                  onClick={loadMoreSearch}
+                  className="px-6 py-2.5 bg-surface border border-accent/20 text-sm text-muted hover:text-white hover:border-accent/40 rounded-xl transition-all"
+                >
+                  Load more results
+                </button>
+              </div>
+            )}
+            {searchLoading && searchResults.length > 0 && (
+              <div className="flex justify-center">
+                <Loader2 size={18} className="animate-spin text-muted" />
+              </div>
+            )}
+          </div>
+        ) : (
+          <Feed filter={activeFilter} />
+        )}
       </main>
     </div>
   )

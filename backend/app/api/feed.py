@@ -250,17 +250,26 @@ async def search_papers(
 ):
     like = f"%{q}%"
     offset = page * limit
+    # Search across title, abstract, authors (JSON text), categories, primary_category, topic tags
     papers = await db.fetchall(
         "SELECT rowid as id, * FROM papers WHERE is_deleted = 0 AND is_duplicate = 0 "
-        "AND (title LIKE ? OR abstract LIKE ?) "
+        "AND (title LIKE ? OR abstract LIKE ? OR authors LIKE ? "
+        "     OR primary_category LIKE ? OR categories LIKE ? OR ai_topic_tags LIKE ?) "
         "ORDER BY normalized_score DESC LIMIT ? OFFSET ?",
-        [like, like, limit, offset]
+        [like, like, like, like, like, like, limit, offset]
+    )
+    total = await db.fetchone(
+        "SELECT COUNT(*) as cnt FROM papers WHERE is_deleted = 0 AND is_duplicate = 0 "
+        "AND (title LIKE ? OR abstract LIKE ? OR authors LIKE ? "
+        "     OR primary_category LIKE ? OR categories LIKE ? OR ai_topic_tags LIKE ?)",
+        [like, like, like, like, like, like]
     )
     return {
         "query": q,
         "papers": [_parse(p) for p in papers],
         "page": page,
         "has_more": len(papers) == limit,
+        "total": (total or {}).get("cnt", 0),
     }
 
 
