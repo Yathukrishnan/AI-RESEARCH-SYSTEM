@@ -274,6 +274,33 @@ async def record_interaction(
     return {"status": "ok"}
 
 
+@router.post("/cron/daily-fetch")
+async def cron_daily_fetch(db: TursoClient = Depends(get_db)):
+    """
+    Public cron endpoint — safe to call from cron-job.org or UptimeRobot.
+    Only triggers the fetch if it hasn't already run successfully today.
+    Point an external cron at POST /api/cron/daily-fetch at 02:35 UTC daily.
+    """
+    from datetime import datetime, timezone as tz
+    import asyncio
+
+    now = datetime.now(tz.utc)
+    if not (now.hour > 2 or (now.hour == 2 and now.minute >= 30)):
+        return {"status": "skipped", "reason": "before 02:30 UTC"}
+
+    row = await db.fetchone(
+        "SELECT id FROM analysis_log "
+        "WHERE run_type = 'daily_fetch' AND status = 'complete' "
+        "AND date(started_at) = date('now') ORDER BY id DESC LIMIT 1"
+    )
+    if row:
+        return {"status": "skipped", "reason": "already ran today"}
+
+    from app.tasks.paper_tasks import fetch_and_store_papers
+    asyncio.create_task(fetch_and_store_papers(1))
+    return {"status": "triggered"}
+
+
 @router.get("/stats")
 async def get_stats(db: TursoClient = Depends(get_db)):
     """Public stats endpoint for the feed header."""

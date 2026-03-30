@@ -66,6 +66,40 @@ async def _daily_hook_generation():
         logger.error(f"Daily hook generation error: {e}")
 
 
+async def _hourly_fetch_catchup():
+    """
+    Runs every hour. If today's daily_fetch hasn't completed yet AND it's
+    past 02:30 UTC, trigger it now. This is a belt-and-braces guard for
+    Render free tier: the service sleeps after 15 min of inactivity, killing
+    APScheduler. When it wakes up on the next request, this hourly job fires
+    and catches up the missed fetch — without waiting for a full restart.
+    """
+    from datetime import datetime, timezone as tz
+    from app.core.turso import db as turso_db
+
+    try:
+        now = datetime.now(tz.utc)
+        # Only attempt if it should have run already today
+        if not (now.hour > 2 or (now.hour == 2 and now.minute >= 30)):
+            return
+
+        row = await turso_db.fetchone(
+            "SELECT id FROM analysis_log "
+            "WHERE run_type = 'daily_fetch' AND status = 'complete' "
+            "AND date(started_at) = date('now') "
+            "ORDER BY id DESC LIMIT 1"
+        )
+        if not row:
+            logger.info("Hourly catch-up: today's fetch missing — triggering now")
+            from app.tasks.paper_tasks import fetch_and_store_papers
+            import asyncio
+            asyncio.create_task(fetch_and_store_papers(1))
+        else:
+            logger.debug("Hourly catch-up: today's fetch already done")
+    except Exception as e:
+        logger.error(f"Hourly fetch catch-up error: {e}")
+
+
 def setup_scheduler():
     from app.tasks.paper_tasks import fetch_and_store_papers, rescore_all_papers, enrich_pending_papers
 
@@ -124,10 +158,21 @@ def setup_scheduler():
         misfire_grace_time=82800,
     )
 
+    # Hourly catch-up: re-fires today's fetch if it was missed (Render free tier sleep guard)
+    scheduler.add_job(
+        _hourly_fetch_catchup,
+        CronTrigger(minute=35, timezone="UTC"),  # fires at :35 past each hour
+        id="hourly_fetch_catchup",
+        replace_existing=True,
+        coalesce=True,
+        misfire_grace_time=3600,
+    )
+
     logger.info(
         "Scheduler configured: daily_fetch(02:30 UTC / 08:00 IST), "
-        "daily_hooks(03:15 UTC), weekly_rescore(Sun 02:00 UTC), "
-        "weekly_content_transition(Mon 00:05 UTC), enrich_pending(hourly)"
+        "daily_hooks(03:15 UTC), hourly_fetch_catchup(:35 each hour), "
+        "weekly_rescore(Sun 02:00 UTC), weekly_content_transition(Mon 00:05 UTC), "
+        "enrich_pending(hourly)"
     )
 
 
