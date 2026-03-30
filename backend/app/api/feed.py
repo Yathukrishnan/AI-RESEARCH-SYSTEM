@@ -324,125 +324,156 @@ async def get_dashboard(db: TursoClient = Depends(get_db)):
     Returns all 8 Intelligence Dashboard sections in one call.
     Cached 30 minutes. Full week's papers are available (no daily rotation cap).
     """
-    cached = await cache_get("dashboard:v1")
-    if cached:
-        return cached
+    import asyncio
+    import logging
+    _log = logging.getLogger(__name__)
 
-    current_week = await _current_week(db)
-    W = "is_deleted = 0 AND is_duplicate = 0 AND is_above_threshold = 1 AND display_week <= ?"
-    P = [current_week]
+    try:
+        cached = await cache_get("dashboard:v1")
+        if cached:
+            return cached
+    except Exception:
+        pass
+
+    try:
+        current_week = await _current_week(db)
+    except Exception:
+        current_week = 999  # show all papers if week calc fails
 
     from datetime import timedelta
+    W = "is_deleted = 0 AND is_duplicate = 0 AND is_above_threshold = 1 AND display_week <= ?"
+    W_ALL = "is_deleted = 0 AND is_duplicate = 0 AND display_week <= ?"
+    P = [current_week]
     cutoff_72h = (datetime.now(timezone.utc) - timedelta(hours=72)).isoformat()
 
-    # 1. Hero Hook – highest h_index trending paper
-    hero_rows = await db.fetchall(
-        f"SELECT rowid as id, * FROM papers WHERE {W} AND is_trending = 1 "
-        "ORDER BY h_index_max DESC, normalized_score DESC LIMIT 1", P
-    )
-    hero = _parse(dict(hero_rows[0])) if hero_rows else None
+    # ── Parallel fetch: all independent queries at once ────────────────────────
+    async def safe_fetch(sql, params=None):
+        try:
+            return await db.fetchall(sql, params or [])
+        except Exception as e:
+            _log.warning(f"Dashboard query failed: {e}")
+            return []
 
-    # 2. Hype Carousel – papers buzzing on HF/HN
-    hype = await db.fetchall(
-        f"SELECT rowid as id, * FROM papers WHERE {W} "
-        "AND (COALESCE(hf_upvotes,0) > 0 OR COALESCE(hn_points,0) > 0) "
-        "ORDER BY COALESCE(trending_score,0) DESC, normalized_score DESC LIMIT 5", P
-    )
-    if len(hype) < 5:
-        top_extra = await db.fetchall(
+    (
+        hero_rows, hype_rows, grid_rows, radar_rows,
+        arsenal_rows, vel_rows, theory_rows, contrarian_rows
+    ) = await asyncio.gather(
+        # 1. Hero – highest h_index trending paper; fallback to top-scored
+        safe_fetch(
+            f"SELECT rowid as id, * FROM papers WHERE {W} AND is_trending = 1 "
+            "ORDER BY h_index_max DESC, normalized_score DESC LIMIT 1", P),
+        # 2. Hype Carousel – social buzz; filled with top-scored below
+        safe_fetch(
             f"SELECT rowid as id, * FROM papers WHERE {W} "
-            "ORDER BY normalized_score DESC LIMIT 5", P
-        )
-        seen = {p.get("id") or p.get("rowid") for p in hype}
-        for p in top_extra:
-            if len(hype) >= 5: break
-            pid = p.get("id") or p.get("rowid")
-            if pid not in seen:
-                hype.append(p)
-                seen.add(pid)
-
-    # 3. Intelligence Grid – last 72 h papers
-    grid = await db.fetchall(
-        f"SELECT rowid as id, * FROM papers WHERE {W} "
-        "AND COALESCE(published_at, created_at) >= ? "
-        "ORDER BY normalized_score DESC LIMIT 6",
-        P + [cutoff_72h]
-    )
-    if not grid:
-        grid = await db.fetchall(
+            "AND (COALESCE(hf_upvotes,0) > 0 OR COALESCE(hn_points,0) > 0) "
+            "ORDER BY COALESCE(trending_score,0) DESC, normalized_score DESC LIMIT 5", P),
+        # 3. Intelligence Grid – recent papers
+        safe_fetch(
             f"SELECT rowid as id, * FROM papers WHERE {W} "
-            "ORDER BY COALESCE(published_at, created_at) DESC LIMIT 6", P
-        )
-
-    # 4. Under the Radar – emerging researchers, high score
-    radar = await db.fetchall(
-        f"SELECT rowid as id, * FROM papers WHERE {W} "
-        "AND COALESCE(h_index_max,0) < 15 AND normalized_score > 0.45 "
-        "ORDER BY COALESCE(hf_upvotes,0) DESC, normalized_score DESC LIMIT 5", P
+            "AND COALESCE(published_at, created_at) >= ? "
+            "ORDER BY normalized_score DESC LIMIT 6", P + [cutoff_72h]),
+        # 4. Under the Radar – low h_index authors
+        safe_fetch(
+            f"SELECT rowid as id, * FROM papers WHERE {W} "
+            "AND COALESCE(h_index_max,0) < 15 "
+            "ORDER BY COALESCE(hf_upvotes,0) DESC, normalized_score DESC LIMIT 5", P),
+        # 5. Builder's Arsenal – github repos
+        safe_fetch(
+            f"SELECT rowid as id, * FROM papers WHERE {W} "
+            "AND COALESCE(github_stars,0) > 0 "
+            "ORDER BY github_stars DESC LIMIT 5", P),
+        # 6. Velocity Desk – citation velocity
+        safe_fetch(
+            f"SELECT rowid as id, * FROM papers WHERE {W} "
+            "AND COALESCE(citation_velocity,0) > 0 "
+            "ORDER BY citation_velocity DESC LIMIT 3", P),
+        # 7. Theory Corner – pure research, no github
+        safe_fetch(
+            f"SELECT rowid as id, * FROM papers WHERE {W} "
+            "AND COALESCE(github_stars,0) = 0 "
+            "ORDER BY normalized_score DESC LIMIT 5", P),
+        # 8. Contrarian View – non-mainstream categories
+        safe_fetch(
+            f"SELECT rowid as id, * FROM papers WHERE {W} "
+            "AND primary_category NOT IN ('cs.LG','cs.AI','cs.CL','cs.CV','cs.NE','stat.ML') "
+            "ORDER BY normalized_score DESC LIMIT 4", P),
     )
 
-    # 5. Builder's Arsenal – highest github_stars
-    arsenal = await db.fetchall(
-        f"SELECT rowid as id, * FROM papers WHERE {W} "
-        "AND COALESCE(github_stars,0) > 0 "
-        "ORDER BY github_stars DESC LIMIT 5", P
-    )
+    # ── Fallbacks for sparse sections ─────────────────────────────────────────
+    top5 = await safe_fetch(
+        f"SELECT rowid as id, * FROM papers WHERE {W} ORDER BY normalized_score DESC LIMIT 10", P)
+    # If nothing passes threshold, try without threshold
+    if not top5:
+        top5 = await safe_fetch(
+            f"SELECT rowid as id, * FROM papers WHERE {W_ALL} ORDER BY normalized_score DESC LIMIT 10", P)
 
-    # 6. Velocity Desk – citation velocity surge, with score history
-    vel_rows = await db.fetchall(
-        f"SELECT rowid as id, * FROM papers WHERE {W} "
-        "AND COALESCE(citation_velocity,0) > 0 "
-        "ORDER BY citation_velocity DESC LIMIT 3", P
-    )
+    if not hero_rows and top5:
+        hero_rows = [top5[0]]
+
+    # Pad hype to 5 with top-scored papers not already in hype
+    if len(hype_rows) < 5 and top5:
+        seen = {p.get("id") for p in hype_rows}
+        for p in top5:
+            if len(hype_rows) >= 5:
+                break
+            if p.get("id") not in seen:
+                hype_rows.append(p)
+                seen.add(p.get("id"))
+
+    if not grid_rows:
+        grid_rows = await safe_fetch(
+            f"SELECT rowid as id, * FROM papers WHERE {W} "
+            "ORDER BY COALESCE(published_at, created_at) DESC LIMIT 6", P)
+        if not grid_rows:
+            grid_rows = top5[:6]
+
+    if not radar_rows:
+        radar_rows = top5[:5]
+
     if not vel_rows:
-        vel_rows = await db.fetchall(
-            f"SELECT rowid as id, * FROM papers WHERE {W} "
-            "ORDER BY normalized_score DESC LIMIT 3", P
-        )
-    velocity_desk = []
-    for p in vel_rows:
-        pid = p.get("id") or p.get("rowid")
-        history = await db.fetchall(
-            "SELECT score FROM score_history WHERE paper_id = ? ORDER BY scored_at ASC LIMIT 7",
-            [pid]
-        )
+        vel_rows = top5[:3]
+
+    if not theory_rows:
+        theory_rows = top5[:5]
+
+    if not contrarian_rows:
+        contrarian_rows = top5[:4]
+
+    # ── Velocity Desk: attach score history (parallel per paper) ──────────────
+    async def fetch_with_history(p):
+        pid = p.get("id")
+        try:
+            history = await db.fetchall(
+                "SELECT score FROM score_history WHERE paper_id = ? ORDER BY scored_at ASC LIMIT 7",
+                [pid]
+            ) if pid else []
+        except Exception:
+            history = []
         parsed = _parse(dict(p))
-        parsed["score_history"] = [round(float(h["score"] or 0), 3) for h in history] or [float(parsed.get("normalized_score") or 0)]
-        velocity_desk.append(parsed)
-
-    # 7. Theory Corner – pure research, no code
-    theory = await db.fetchall(
-        f"SELECT rowid as id, * FROM papers WHERE {W} "
-        "AND COALESCE(github_stars,0) = 0 AND normalized_score > 0.50 "
-        "ORDER BY normalized_score DESC LIMIT 5", P
-    )
-
-    # 8. Contrarian View – non-mainstream categories
-    contrarian = await db.fetchall(
-        f"SELECT rowid as id, * FROM papers WHERE {W} "
-        "AND primary_category NOT IN ('cs.LG','cs.AI','cs.CL','cs.CV','cs.NE','stat.ML') "
-        "AND normalized_score > 0.45 "
-        "ORDER BY normalized_score DESC LIMIT 4", P
-    )
-    if not contrarian:
-        contrarian = await db.fetchall(
-            f"SELECT rowid as id, * FROM papers WHERE {W} "
-            "AND normalized_score > 0.45 "
-            "ORDER BY COALESCE(scr_value,0) ASC LIMIT 4", P
+        parsed["score_history"] = (
+            [round(float(h["score"] or 0), 3) for h in history]
+            or [round(float(parsed.get("normalized_score") or 0), 3)]
         )
+        return parsed
+
+    velocity_desk = list(await asyncio.gather(*[fetch_with_history(p) for p in vel_rows]))
 
     result = {
-        "hero": hero,
-        "hype_carousel": [_parse(p) for p in hype],
-        "intelligence_grid": [_parse(p) for p in grid],
-        "under_the_radar": [_parse(p) for p in radar],
-        "builders_arsenal": [_parse(p) for p in arsenal],
+        "hero": _parse(dict(hero_rows[0])) if hero_rows else None,
+        "hype_carousel": [_parse(dict(p)) for p in hype_rows],
+        "intelligence_grid": [_parse(dict(p)) for p in grid_rows],
+        "under_the_radar": [_parse(dict(p)) for p in radar_rows],
+        "builders_arsenal": [_parse(dict(p)) for p in arsenal_rows],
         "velocity_desk": velocity_desk,
-        "theory_corner": [_parse(p) for p in theory],
-        "contrarian_view": [_parse(p) for p in contrarian],
+        "theory_corner": [_parse(dict(p)) for p in theory_rows],
+        "contrarian_view": [_parse(dict(p)) for p in contrarian_rows],
     }
 
-    await cache_set("dashboard:v1", result, ttl=1800)
+    try:
+        await cache_set("dashboard:v1", result, ttl=1800)
+    except Exception:
+        pass
+
     return result
 
 
@@ -451,27 +482,34 @@ async def get_daily_hooks(db: TursoClient = Depends(get_db)):
     """Returns today's rotating hooks for the headline banner."""
     from datetime import date as _date
     today = _date.today().isoformat()
-    hooks = await db.fetchall(
-        "SELECT dh.id, dh.hook_text, dh.section_label, dh.hook_order, "
-        "p.title, p.rowid as paper_id "
-        "FROM daily_hooks dh JOIN papers p ON p.rowid = dh.paper_id "
-        "WHERE dh.date = ? ORDER BY dh.hook_order ASC",
-        [today]
-    )
-    # Fallback: if no hooks generated yet, pull from hook_text column on papers
-    if not hooks:
-        rows = await db.fetchall(
-            "SELECT rowid as id, title, hook_text FROM papers "
-            "WHERE hook_text IS NOT NULL AND hook_text != '' "
-            "AND is_deleted = 0 AND is_above_threshold = 1 "
-            "ORDER BY normalized_score DESC LIMIT 15"
+    hooks = []
+    try:
+        hooks = await db.fetchall(
+            "SELECT dh.id, dh.hook_text, dh.section_label, dh.hook_order, "
+            "p.title, p.rowid as paper_id "
+            "FROM daily_hooks dh JOIN papers p ON p.rowid = dh.paper_id "
+            "WHERE dh.date = ? ORDER BY dh.hook_order ASC",
+            [today]
         )
-        labels = ["🔥 Trending Papers","💎 Hidden Gems","⚡ Just Added","📈 Rising Fast","🔬 Deep Research"]
-        hooks = [
-            {"id": i, "hook_text": r["hook_text"], "section_label": labels[i % len(labels)],
-             "hook_order": i, "title": r["title"], "paper_id": r["id"]}
-            for i, r in enumerate(rows)
-        ]
+    except Exception:
+        hooks = []
+    # Fallback: pull from hook_text column on papers
+    if not hooks:
+        try:
+            rows = await db.fetchall(
+                "SELECT rowid as id, title, hook_text FROM papers "
+                "WHERE hook_text IS NOT NULL AND hook_text != '' "
+                "AND is_deleted = 0 "
+                "ORDER BY normalized_score DESC LIMIT 15"
+            )
+            labels = ["🔥 Trending Papers", "💎 Hidden Gems", "⚡ Just Added", "📈 Rising Fast", "🔬 Deep Research"]
+            hooks = [
+                {"id": i, "hook_text": r["hook_text"], "section_label": labels[i % len(labels)],
+                 "hook_order": i, "title": r["title"], "paper_id": r["id"]}
+                for i, r in enumerate(rows)
+            ]
+        except Exception:
+            hooks = []
     return {"date": today, "hooks": [dict(h) for h in hooks]}
 
 
