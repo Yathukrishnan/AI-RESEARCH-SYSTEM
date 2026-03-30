@@ -68,9 +68,9 @@ async def generate_alerts(db: TursoClient) -> List[Dict]:
     except Exception:
         pass
 
-    # ── New papers (last 48 h) ─────────────────────────────────────────
+    # ── New papers (last 7 days) ───────────────────────────────────────
     try:
-        since = (datetime.now(timezone.utc) - timedelta(hours=48)).isoformat()
+        since = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
         new_count = await db.count(
             "papers", "created_at > ? AND is_deleted = 0", [since]
         )

@@ -165,10 +165,22 @@ def setup_scheduler():
         misfire_grace_time=3600,
     )
 
-    # Daily hook generation at 03:15 UTC — 45 min after daily fetch so new papers are scored
+    # Daily light rescore at 04:00 UTC — refreshes trend labels, normalisation, and
+    # trending flags after new papers are fetched and enriched. This keeps the
+    # dashboard sections and category pages rotating with fresh rankings every day.
+    scheduler.add_job(
+        rescore_all_papers,
+        CronTrigger(hour=4, minute=0, timezone="UTC"),
+        id="daily_rescore",
+        replace_existing=True,
+        coalesce=True,
+        misfire_grace_time=82800,
+    )
+
+    # Daily hook generation at 04:30 UTC — after daily rescore so hooks reflect updated scores
     scheduler.add_job(
         _daily_hook_generation,
-        CronTrigger(hour=3, minute=15, timezone="UTC"),
+        CronTrigger(hour=4, minute=30, timezone="UTC"),
         id="daily_hooks",
         replace_existing=True,
         coalesce=True,
@@ -197,7 +209,8 @@ def setup_scheduler():
 
     logger.info(
         "Scheduler configured: daily_fetch(02:30 UTC / 08:00 IST), "
-        "daily_hooks(03:15 UTC), hourly_fetch_catchup(:35 each hour), "
+        "daily_rescore(04:00 UTC), daily_hooks(04:30 UTC), "
+        "hourly_fetch_catchup(:35 each hour), "
         "weekly_rescore(Sun 02:00 UTC), weekly_content_transition(Tue 00:05 UTC), "
         "enrich_pending(hourly), social_signals(every 4h at :45)"
     )

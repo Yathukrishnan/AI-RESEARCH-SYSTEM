@@ -328,8 +328,13 @@ async def get_dashboard(db: TursoClient = Depends(get_db)):
     import logging
     _log = logging.getLogger(__name__)
 
+    # Daily rotation: offset shifts each day so users see different papers
+    from datetime import date as _date, timedelta
+    today_str = _date.today().isoformat()
+    day_num = _date.today().toordinal()  # unique int per calendar day
+
     try:
-        cached = await cache_get("dashboard:v1")
+        cached = await cache_get(f"dashboard:v1:{today_str}")
         if cached:
             return cached
     except Exception:
@@ -340,11 +345,17 @@ async def get_dashboard(db: TursoClient = Depends(get_db)):
     except Exception:
         current_week = 999  # show all papers if week calc fails
 
-    from datetime import timedelta
     W = "is_deleted = 0 AND is_duplicate = 0 AND is_above_threshold = 1 AND display_week <= ?"
     W_ALL = "is_deleted = 0 AND is_duplicate = 0 AND display_week <= ?"
     P = [current_week]
     cutoff_72h = (datetime.now(timezone.utc) - timedelta(hours=72)).isoformat()
+
+    # Daily offsets — rotate which papers appear in each section each day
+    hero_off    = day_num % 8          # cycle top 8 trending papers (1 shown)
+    hype_off    = (day_num % 5) * 3    # 5 rotations × 3-paper shift
+    radar_off   = (day_num % 4) * 5    # 4 rotations × 5-paper shift
+    theory_off  = (day_num % 4) * 5
+    contra_off  = (day_num % 3) * 4    # 3 rotations × 4-paper shift
 
     # ── Parallel fetch: all independent queries at once ────────────────────────
     async def safe_fetch(sql, params=None):
@@ -358,45 +369,45 @@ async def get_dashboard(db: TursoClient = Depends(get_db)):
         hero_rows, hype_rows, grid_rows, radar_rows,
         arsenal_rows, vel_rows, theory_rows, contrarian_rows
     ) = await asyncio.gather(
-        # 1. Hero – highest h_index trending paper; fallback to top-scored
+        # 1. Hero – rotate through top trending papers daily
         safe_fetch(
             f"SELECT rowid as id, * FROM papers WHERE {W} AND is_trending = 1 "
-            "ORDER BY h_index_max DESC, normalized_score DESC LIMIT 1", P),
-        # 2. Hype Carousel – social buzz; filled with top-scored below
+            f"ORDER BY h_index_max DESC, normalized_score DESC LIMIT 1 OFFSET {hero_off}", P),
+        # 2. Hype Carousel – rotate social buzz papers daily
         safe_fetch(
             f"SELECT rowid as id, * FROM papers WHERE {W} "
             "AND (COALESCE(hf_upvotes,0) > 0 OR COALESCE(hn_points,0) > 0) "
-            "ORDER BY COALESCE(trending_score,0) DESC, normalized_score DESC LIMIT 5", P),
-        # 3. Intelligence Grid – recent papers
+            f"ORDER BY COALESCE(trending_score,0) DESC, normalized_score DESC LIMIT 5 OFFSET {hype_off}", P),
+        # 3. Intelligence Grid – recent papers (no rotation, always newest)
         safe_fetch(
             f"SELECT rowid as id, * FROM papers WHERE {W} "
             "AND COALESCE(published_at, created_at) >= ? "
             "ORDER BY normalized_score DESC LIMIT 6", P + [cutoff_72h]),
-        # 4. Under the Radar – low h_index authors
+        # 4. Under the Radar – rotate emerging researcher papers daily
         safe_fetch(
             f"SELECT rowid as id, * FROM papers WHERE {W} "
             "AND COALESCE(h_index_max,0) < 15 "
-            "ORDER BY COALESCE(hf_upvotes,0) DESC, normalized_score DESC LIMIT 5", P),
-        # 5. Builder's Arsenal – github repos
+            f"ORDER BY normalized_score DESC LIMIT 5 OFFSET {radar_off}", P),
+        # 5. Builder's Arsenal – github repos (stable ranking, no rotation)
         safe_fetch(
             f"SELECT rowid as id, * FROM papers WHERE {W} "
             "AND COALESCE(github_stars,0) > 0 "
             "ORDER BY github_stars DESC LIMIT 5", P),
-        # 6. Velocity Desk – citation velocity
+        # 6. Velocity Desk – citation velocity (stable)
         safe_fetch(
             f"SELECT rowid as id, * FROM papers WHERE {W} "
             "AND COALESCE(citation_velocity,0) > 0 "
             "ORDER BY citation_velocity DESC LIMIT 3", P),
-        # 7. Theory Corner – pure research, no github
+        # 7. Theory Corner – rotate pure-research papers daily
         safe_fetch(
             f"SELECT rowid as id, * FROM papers WHERE {W} "
             "AND COALESCE(github_stars,0) = 0 "
-            "ORDER BY normalized_score DESC LIMIT 5", P),
-        # 8. Contrarian View – non-mainstream categories
+            f"ORDER BY normalized_score DESC LIMIT 5 OFFSET {theory_off}", P),
+        # 8. Contrarian View – rotate non-mainstream papers daily
         safe_fetch(
             f"SELECT rowid as id, * FROM papers WHERE {W} "
             "AND primary_category NOT IN ('cs.LG','cs.AI','cs.CL','cs.CV','cs.NE','stat.ML') "
-            "ORDER BY normalized_score DESC LIMIT 4", P),
+            f"ORDER BY normalized_score DESC LIMIT 4 OFFSET {contra_off}", P),
     )
 
     # ── Fallbacks for sparse sections ─────────────────────────────────────────
@@ -470,7 +481,8 @@ async def get_dashboard(db: TursoClient = Depends(get_db)):
     }
 
     try:
-        await cache_set("dashboard:v1", result, ttl=1800)
+        # Cache until midnight (max 30 min within the same day)
+        await cache_set(f"dashboard:v1:{today_str}", result, ttl=1800)
     except Exception:
         pass
 
@@ -537,9 +549,9 @@ async def get_papers_by_type(
         params = []
     elif type == "new":
         from datetime import timedelta
-        since = (datetime.now(timezone.utc) - timedelta(hours=48)).isoformat()
+        since = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
         where = f"{base} AND created_at > ?"
-        order = "COALESCE(normalized_score, keyword_score, 0) DESC"
+        order = "COALESCE(normalized_score, keyword_score, 0) DESC, created_at DESC"
         params = [since]
     elif type == "rising":
         where = (

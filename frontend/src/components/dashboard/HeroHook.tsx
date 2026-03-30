@@ -1,110 +1,274 @@
 import { motion } from 'framer-motion'
-import { ArrowRight, Star, Quote, Award } from 'lucide-react'
+import { Github, Bookmark, ExternalLink, Quote, Star, Eye, Crown } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
+import { useState } from 'react'
 import { DashboardPaper } from '@/lib/types'
 import { feedApi } from '@/lib/api'
-import { timeAgo } from '@/lib/utils'
+import { isSaved, savePaper, unsavePaper } from '@/lib/utils'
+import toast from 'react-hot-toast'
 
 interface Props { paper: DashboardPaper }
 
+function getSpotlight(paper: DashboardPaper): { badge: string; title: string; bio: string } {
+  const hIndex = Math.round(paper.h_index_max || 0)
+  const name = paper.authors?.[0]?.name || 'the author'
+  if (hIndex >= 70) return {
+    badge: 'VIP SPOTLIGHT · ELITE AUTHOR',
+    title: 'The Heavyweight',
+    bio: `The field listens when ${name} publishes. With an h-index of ${hIndex}, this researcher shapes AI's trajectory — their latest pre-print is already drawing attention.`,
+  }
+  if (hIndex >= 40) return {
+    badge: 'TOP RESEARCHER · HIGH IMPACT',
+    title: 'The Authority',
+    bio: `${name} (h-index ${hIndex}) is among the most influential voices in AI. This paper is generating significant interest across the community.`,
+  }
+  if (paper.hf_upvotes && paper.hf_upvotes > 50) return {
+    badge: 'COMMUNITY FAVOURITE · HUGGING FACE',
+    title: 'The Crowd Pick',
+    bio: `The Hugging Face community has pushed this paper to the top with ${paper.hf_upvotes} upvotes. Practitioner signal at its strongest.`,
+  }
+  if (paper.is_trending) return {
+    badge: 'TRENDING · COMMUNITY BUZZ',
+    title: 'The Breakout',
+    bio: `This paper is generating real buzz across AI communities right now — one of the fastest rising papers in the feed this week.`,
+  }
+  return {
+    badge: "EDITOR'S PICK · HIGH SCORE",
+    title: 'The Deep Cut',
+    bio: `A high-signal paper our scoring system ranked among this week's best — strong on citations, methodology, and community relevance.`,
+  }
+}
+
+function ScoreRing({ score }: { score: number }) {
+  const r = 36
+  const circ = 2 * Math.PI * r
+  const filled = (score / 100) * circ
+  return (
+    <div className="relative w-24 h-24 shrink-0 flex items-center justify-center">
+      <svg width="96" height="96" className="-rotate-90" viewBox="0 0 96 96">
+        <circle cx="48" cy="48" r={r} stroke="#1e2a4a" strokeWidth="8" fill="none" />
+        <circle
+          cx="48" cy="48" r={r}
+          stroke={score >= 80 ? '#f59e0b' : score >= 60 ? '#6366f1' : '#22d3ee'}
+          strokeWidth="8" fill="none"
+          strokeDasharray={`${filled} ${circ}`}
+          strokeLinecap="round"
+        />
+      </svg>
+      <div className="absolute flex flex-col items-center">
+        <span className="text-2xl font-black text-white leading-none">{score}</span>
+        <span className="text-[9px] text-muted font-bold uppercase tracking-widest">Score</span>
+      </div>
+    </div>
+  )
+}
+
+function StatBox({ icon: Icon, value, label, color }: {
+  icon: React.ElementType; value: string | number; label: string; color: string
+}) {
+  return (
+    <div className="flex flex-col items-center justify-center p-3 bg-white/4 rounded-xl border border-white/8 gap-1">
+      <Icon size={14} className={color} />
+      <span className={`text-lg font-black leading-none ${color}`}>{value}</span>
+      <span className="text-[10px] text-muted uppercase tracking-wider font-semibold">{label}</span>
+    </div>
+  )
+}
+
+function fmt(n: number): string {
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`
+  return n.toLocaleString()
+}
+
 export function HeroHook({ paper }: Props) {
   const navigate = useNavigate()
+  const [saved, setSaved] = useState(isSaved(paper.id))
+  const { badge, title, bio } = getSpotlight(paper)
+  const topAuthor = paper.authors?.[0]
+  const hIndex = Math.round(paper.h_index_max || topAuthor?.h_index || 0)
+  const score = Math.round((paper.normalized_score || 0) * 100)
+
+  const platforms: string[] = []
+  if ((paper.hf_upvotes || 0) > 0) platforms.push('Hugging Face')
+  if ((paper.hn_points || 0) > 0) platforms.push('Hacker News')
+  if ((paper.github_stars || 0) > 0) platforms.push('GitHub')
+  platforms.push('arXiv')
 
   const handleView = () => {
     feedApi.interact(paper.id, 'view').catch(() => {})
     navigate(`/paper/${paper.id}`)
   }
 
-  const topAuthor = paper.authors?.[0]
-  const hIndex = Math.round(paper.h_index_max || topAuthor?.h_index || 0)
-  const score = Math.round((paper.normalized_score || 0) * 100)
+  const handleSave = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (saved) { unsavePaper(paper.id); setSaved(false); toast.success('Removed') }
+    else { savePaper(paper.id); setSaved(true); toast.success('Saved') }
+  }
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5 }}
+      className="relative overflow-hidden rounded-2xl border border-yellow-500/20 cursor-pointer group"
+      style={{
+        background: 'linear-gradient(135deg, #050d2e 0%, #0a1628 60%, #050d1a 100%)',
+        boxShadow: '0 0 60px rgba(245,158,11,0.08), 0 0 0 1px rgba(245,158,11,0.1)',
+      }}
       onClick={handleView}
-      className="relative overflow-hidden rounded-2xl border border-accent/30 cursor-pointer group"
-      style={{ background: 'linear-gradient(135deg, rgba(99,102,241,0.12) 0%, rgba(14,165,233,0.06) 100%)', boxShadow: '0 0 40px rgba(99,102,241,0.15)' }}
     >
-      {/* Glow orb */}
-      <div className="absolute -top-20 -right-20 w-64 h-64 bg-accent/10 rounded-full blur-3xl pointer-events-none" />
+      {/* Glow */}
+      <div className="absolute -top-24 -left-24 w-80 h-80 bg-yellow-500/5 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute -bottom-16 -right-16 w-64 h-64 bg-accent/8 rounded-full blur-3xl pointer-events-none" />
 
-      <div className="relative px-6 py-6 sm:px-8 sm:py-7">
-        {/* Header row */}
-        <div className="flex items-start justify-between gap-4 mb-4">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-accent/20 border border-accent/30 text-accent-2 uppercase tracking-wider">
-              Editor's Pick
+      <div className="relative flex flex-col lg:flex-row gap-0">
+        {/* ── Left: main content ── */}
+        <div className="flex-1 px-6 py-6 sm:px-8 sm:py-7 min-w-0">
+          {/* Spotlight label */}
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-[10px] font-bold text-yellow-400/80 tracking-widest uppercase">
+              {badge}
             </span>
-            {paper.primary_category && (
-              <span className="text-xs px-2 py-0.5 rounded-full bg-surface border border-accent/15 text-slate-400">
-                {paper.primary_category}
+          </div>
+          <div className="flex items-center gap-2 mb-3">
+            <Crown size={16} className="text-yellow-400 shrink-0" />
+            <span className="text-base font-bold text-yellow-300">{title}</span>
+          </div>
+
+          <p className="text-xs text-slate-400 leading-relaxed mb-5 line-clamp-2">{bio}</p>
+
+          {/* Authors */}
+          <div className="flex items-center gap-2 flex-wrap mb-5">
+            {topAuthor && (
+              <span className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-yellow-400/10 border border-yellow-400/25 text-yellow-300">
+                <Crown size={10} /> {topAuthor.name}
               </span>
             )}
+            {hIndex > 0 && (
+              <span className="text-xs px-2 py-0.5 rounded-full bg-white/6 border border-white/10 text-slate-300">
+                h-index {hIndex}
+              </span>
+            )}
+            {paper.authors.slice(1, 3).map((a) => (
+              <span key={a.name} className="text-xs text-slate-500">{a.name}</span>
+            ))}
+            {paper.authors.length > 3 && (
+              <span className="text-xs text-slate-600">+{paper.authors.length - 3} more</span>
+            )}
           </div>
-          <span className="text-xs text-muted shrink-0">{timeAgo(paper.published_at)}</span>
-        </div>
 
-        {/* Author block */}
-        {topAuthor && (
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent/30 to-cyan-500/20 border border-accent/30 flex items-center justify-center shrink-0">
-              <span className="text-sm font-bold text-accent-2">{topAuthor.name?.[0] ?? '?'}</span>
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-white">{topAuthor.name}</p>
-              <div className="flex items-center gap-2">
-                {hIndex > 0 && (
-                  <span className="flex items-center gap-1 text-xs text-yellow-400">
-                    <Award size={10} /> h-index {hIndex}
-                  </span>
-                )}
-                {paper.authors.length > 1 && (
-                  <span className="text-xs text-muted">+{paper.authors.length - 1} authors</span>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Hook headline */}
-        <div className="mb-5">
-          {paper.hook_text ? (
-            <>
-              <p className="text-xl sm:text-2xl font-bold text-white leading-snug group-hover:text-accent-2 transition-colors mb-2">
+          {/* Hook headline */}
+          <div className="mb-4">
+            {paper.hook_text ? (
+              <p className="text-xl sm:text-2xl font-black text-white leading-snug group-hover:text-yellow-100 transition-colors">
                 {paper.hook_text}
               </p>
-              <p className="text-xs text-slate-500 font-mono line-clamp-1">↳ {paper.title}</p>
-            </>
-          ) : (
-            <p className="text-xl sm:text-2xl font-bold text-white leading-snug group-hover:text-accent-2 transition-colors">
-              {paper.title}
+            ) : (
+              <p className="text-xl sm:text-2xl font-black text-white leading-snug group-hover:text-yellow-100 transition-colors">
+                {paper.title}
+              </p>
+            )}
+            {paper.hook_text && (
+              <p className="text-[11px] text-slate-600 font-mono mt-1 line-clamp-1">↳ {paper.title}</p>
+            )}
+          </div>
+
+          {/* Abstract snippet */}
+          {paper.abstract && (
+            <p className="text-sm text-slate-400 leading-relaxed line-clamp-3 mb-5">
+              {paper.abstract}
             </p>
           )}
-          {paper.ai_summary && (
-            <p className="text-sm text-slate-400 mt-2 leading-relaxed line-clamp-2">{paper.ai_summary}</p>
+
+          {/* Topic tags */}
+          {paper.ai_topic_tags?.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mb-5">
+              {paper.ai_topic_tags.slice(0, 5).map((tag) => (
+                <span key={tag} className="text-[11px] px-2 py-0.5 rounded-full bg-accent/10 border border-accent/20 text-accent-2">
+                  #{tag}
+                </span>
+              ))}
+            </div>
           )}
+
+          {/* Action buttons */}
+          <div className="flex items-center gap-2 flex-wrap" onClick={(e) => e.stopPropagation()}>
+            <button
+              onClick={handleView}
+              className="flex items-center gap-2 px-4 py-2 bg-yellow-400 text-black text-sm font-bold rounded-xl hover:bg-yellow-300 transition-all"
+            >
+              <ExternalLink size={13} /> Read Pre-print
+            </button>
+            {paper.github_url && (
+              <a
+                href={paper.github_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 px-3 py-2 bg-white/6 border border-white/12 text-sm text-slate-300 rounded-xl hover:bg-white/10 transition-all"
+              >
+                <Github size={13} /> Code
+              </a>
+            )}
+            <button
+              onClick={handleSave}
+              className={`p-2 rounded-xl border transition-all ${saved ? 'bg-accent/20 border-accent/40 text-accent-2' : 'bg-white/6 border-white/12 text-slate-400 hover:text-white'}`}
+            >
+              <Bookmark size={14} fill={saved ? 'currentColor' : 'none'} />
+            </button>
+          </div>
         </div>
 
-        {/* Stats + CTA */}
-        <div className="flex items-center gap-4 flex-wrap">
-          {paper.citation_count > 0 && (
-            <span className="flex items-center gap-1.5 text-xs text-slate-400">
-              <Quote size={11} className="text-accent-2" /> {paper.citation_count} citations
-            </span>
-          )}
-          {paper.github_stars > 0 && (
-            <span className="flex items-center gap-1.5 text-xs text-yellow-400">
-              <Star size={11} /> {paper.github_stars.toLocaleString()} stars
-            </span>
-          )}
-          <span className="text-xs text-slate-500 font-mono">score {score}%</span>
+        {/* ── Right: stats panel ── */}
+        <div
+          className="lg:w-60 shrink-0 border-t lg:border-t-0 lg:border-l border-white/6 px-6 py-6 flex flex-col gap-4"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Score ring */}
+          <div className="flex justify-center">
+            <ScoreRing score={score} />
+          </div>
 
-          <button className="ml-auto flex items-center gap-2 px-4 py-2 bg-accent text-white text-sm font-semibold rounded-xl hover:bg-accent/80 group-hover:gap-3 transition-all">
-            Read Paper <ArrowRight size={14} />
-          </button>
+          {/* 2×2 stats */}
+          <div className="grid grid-cols-2 gap-2">
+            <StatBox
+              icon={Quote}
+              value={fmt(paper.citation_count || 0)}
+              label="Citations"
+              color="text-accent-2"
+            />
+            <StatBox
+              icon={Eye}
+              value={fmt(paper.view_count || 0)}
+              label="Views"
+              color="text-cyan-400"
+            />
+            <StatBox
+              icon={Star}
+              value={fmt(paper.github_stars || 0)}
+              label="Stars"
+              color="text-yellow-400"
+            />
+            <StatBox
+              icon={Crown}
+              value={hIndex || '—'}
+              label="H-Index"
+              color="text-yellow-400"
+            />
+          </div>
+
+          {/* Trending on */}
+          {platforms.length > 0 && (
+            <div>
+              <p className="text-[9px] font-bold text-muted uppercase tracking-widest mb-2">Trending on</p>
+              <div className="flex flex-wrap gap-1.5">
+                {platforms.map((p) => (
+                  <span key={p} className="text-[10px] px-2 py-0.5 rounded-full bg-white/6 border border-white/10 text-slate-300 font-medium">
+                    {p}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </motion.div>

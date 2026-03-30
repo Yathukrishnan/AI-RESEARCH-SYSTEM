@@ -3,12 +3,10 @@ import { Navbar } from '@/components/layout/Navbar'
 import { ResumeReading } from '@/components/feed/ResumeReading'
 import { PaperCard } from '@/components/feed/PaperCard'
 import { Dashboard } from '@/components/dashboard/Dashboard'
-import { HookRotator } from '@/components/dashboard/HookRotator'
-import { AlertBanner } from '@/components/alerts/AlertBanner'
+import { FeedBanner } from '@/components/alerts/FeedBanner'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Database, Eye, Flame, Loader2, CheckCircle, Search, X } from 'lucide-react'
 import { feedApi } from '@/lib/api'
-import { Alert } from '@/lib/types'
 
 interface Stats {
   total_papers: number
@@ -40,7 +38,6 @@ function StatChip({ icon: Icon, value, label, color, border }: {
 export function HomePage() {
   const [stats, setStats] = useState<Stats | null>(null)
   const [polling, setPolling] = useState(false)
-  const [alerts, setAlerts] = useState<Alert[]>([])
 
   // Search
   const [searchInput, setSearchInput] = useState('')
@@ -60,17 +57,8 @@ export function HomePage() {
     } catch { /* silent */ }
   }
 
-  // Load alerts from feed page=0
-  const fetchAlerts = async () => {
-    try {
-      const res = await feedApi.getFeed(0)
-      if (res.data?.alerts?.length) setAlerts(res.data.alerts)
-    } catch { /* silent */ }
-  }
-
   useEffect(() => {
     fetchStats()
-    fetchAlerts()
   }, [])
 
   useEffect(() => {
@@ -184,10 +172,10 @@ export function HomePage() {
             </div>
           </motion.div>
 
-          {/* Hook rotator — 15 daily hooks cycling */}
+          {/* Feed banner — daily hooks + category tiles */}
           {!isSearching && (
             <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.2 }}>
-              <HookRotator />
+              <FeedBanner />
             </motion.div>
           )}
         </div>
@@ -233,8 +221,6 @@ export function HomePage() {
 
       {/* Main content */}
       <main className="max-w-7xl mx-auto px-4 py-8 space-y-5">
-        {/* Alerts + resume reading always shown */}
-        {alerts.length > 0 && !isSearching && <AlertBanner alerts={alerts} />}
         {!isSearching && <ResumeReading />}
 
         {isSearching ? (
