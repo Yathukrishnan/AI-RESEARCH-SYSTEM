@@ -15,7 +15,7 @@ const HOOKS = [
   "Scores moving fast. These papers are on a trajectory",
 ]
 
-interface Props { papers: DashboardPaper[] }
+interface Props { papers: DashboardPaper[]; hook?: string }
 
 function Sparkline({ data }: { data: number[] }) {
   if (!data || data.length < 2) {
@@ -42,7 +42,7 @@ function Sparkline({ data }: { data: number[] }) {
   )
 }
 
-export function VelocityDesk({ papers }: Props) {
+export function VelocityDesk({ papers, hook }: Props) {
   const navigate = useNavigate()
 
   const handleView = (paper: DashboardPaper) => {
@@ -64,7 +64,7 @@ export function VelocityDesk({ papers }: Props) {
         <h2 className="text-sm font-bold text-white flex items-center gap-2">
           <Activity size={14} className="text-emerald-400" /> Velocity Desk
         </h2>
-        <p className="text-xs text-muted mt-0.5">{dailyHook(HOOKS)}</p>
+        <p className="text-xs text-muted mt-0.5">{hook || dailyHook(HOOKS)}</p>
       </div>
 
       <div className="space-y-3">

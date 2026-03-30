@@ -198,6 +198,68 @@ Respond with ONLY the headline, nothing else. No quotes."""
 
         return self._make_fallback_hook(title, abstract)
 
+    async def generate_section_hook(self, section: str, papers: list) -> str:
+        """
+        Generate a punchy section subheading based on the actual papers shown.
+        Called once per dashboard cache fill (date-keyed, so once per day).
+        Falls back to empty string so frontend uses its hardcoded rotation.
+        """
+        if not self._api_key or not papers:
+            return ""
+
+        titles = [p.get("hook_text") or p.get("title") or "" for p in papers[:4] if p]
+        titles = [t[:120] for t in titles if t]
+        if not titles:
+            return ""
+
+        section_context = {
+            "Intelligence Grid":   "most important new papers (last 72 hours)",
+            "Under the Radar":     "emerging researchers with low h-index but high-quality work",
+            "Hype Carousel":       "papers buzzing on HuggingFace and Hacker News",
+            "Velocity Desk":       "papers whose citation velocity is suddenly spiking",
+            "Theory Corner":       "pure research papers with no GitHub code",
+            "Contrarian View":     "research challenging mainstream AI paradigms from non-standard fields",
+        }.get(section, section)
+
+        bullet_list = "\n".join(f"- {t}" for t in titles)
+        prompt = f"""You are writing a one-line subheading for a dashboard section called "{section}" which shows {section_context}.
+
+Here are the actual papers shown in this section right now:
+{bullet_list}
+
+Write ONE punchy subheading (max 12 words) that:
+- Hooks the reader into wanting to read these specific papers
+- Sounds like editorial copy, not academic language
+- References what is actually in these papers (not generic)
+- Is exciting, sharp, and direct
+
+Respond with ONLY the subheading. No quotes. No punctuation at the end."""
+
+        try:
+            async with httpx.AsyncClient(timeout=12) as client:
+                resp = await client.post(
+                    f"{self.base_url}/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {self._api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": self.model,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "max_tokens": 60,
+                        "temperature": 0.75,
+                    }
+                )
+                if resp.status_code == 200:
+                    text = resp.json()["choices"][0]["message"]["content"].strip()
+                    text = text.strip('"\'').rstrip('.').strip()
+                    if text and len(text) < 120:
+                        return text
+        except Exception as e:
+            logger.warning(f"Section hook generation failed for {section}: {e}")
+
+        return ""
+
     def _make_fallback_hook(self, title: str, abstract: str) -> str:
         """Short fallback hook from title (truncated to feel punchy)."""
         # Trim title to ~70 chars at a word boundary

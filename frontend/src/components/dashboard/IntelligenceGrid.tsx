@@ -15,9 +15,9 @@ const HOOKS = [
   "The field moved. Here's where it went in the last 72 hours",
 ]
 
-interface Props { papers: DashboardPaper[] }
+interface Props { papers: DashboardPaper[]; hook?: string }
 
-export function IntelligenceGrid({ papers }: Props) {
+export function IntelligenceGrid({ papers, hook }: Props) {
   const navigate = useNavigate()
 
   const handleView = (paper: DashboardPaper) => {
@@ -40,7 +40,7 @@ export function IntelligenceGrid({ papers }: Props) {
           <Zap size={14} className="text-cyan-400" /> Intelligence Grid
         </h2>
         <p className="text-xs text-muted mt-0.5 flex items-center gap-1">
-          <Clock size={10} /> {dailyHook(HOOKS)}
+          <Clock size={10} /> {hook || dailyHook(HOOKS)}
         </p>
       </div>
 

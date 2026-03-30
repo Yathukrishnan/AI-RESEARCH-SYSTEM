@@ -15,9 +15,9 @@ const HOOKS = [
   "Fundamental advances in theory — where the real breakthroughs start",
 ]
 
-interface Props { papers: DashboardPaper[] }
+interface Props { papers: DashboardPaper[]; hook?: string }
 
-export function TheoryCorner({ papers }: Props) {
+export function TheoryCorner({ papers, hook }: Props) {
   const navigate = useNavigate()
 
   const handleView = (paper: DashboardPaper) => {
@@ -38,7 +38,7 @@ export function TheoryCorner({ papers }: Props) {
         <h2 className="text-sm font-bold text-white flex items-center gap-2">
           <BookOpen size={14} className="text-slate-400" /> Theory Desk
         </h2>
-        <p className="text-xs text-muted mt-0.5">{dailyHook(HOOKS)}</p>
+        <p className="text-xs text-muted mt-0.5">{hook || dailyHook(HOOKS)}</p>
       </div>
 
       <div className="space-y-0 divide-y divide-accent/5">

@@ -15,9 +15,9 @@ const HOOKS = [
   "Contrarian bets that might be right — explore at your own risk",
 ]
 
-interface Props { papers: DashboardPaper[] }
+interface Props { papers: DashboardPaper[]; hook?: string }
 
-export function ContrarianView({ papers }: Props) {
+export function ContrarianView({ papers, hook }: Props) {
   const navigate = useNavigate()
 
   const handleView = (paper: DashboardPaper) => {
@@ -41,7 +41,7 @@ export function ContrarianView({ papers }: Props) {
         </div>
         <div>
           <h2 className="text-sm font-bold text-white">The Contrarian View</h2>
-          <p className="text-xs text-muted mt-0.5">{dailyHook(HOOKS)}</p>
+          <p className="text-xs text-muted mt-0.5">{hook || dailyHook(HOOKS)}</p>
         </div>
       </div>
 

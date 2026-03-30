@@ -16,9 +16,9 @@ const HOOKS = [
   "Breakout research with real-world traction — swipe to explore",
 ]
 
-interface Props { papers: DashboardPaper[] }
+interface Props { papers: DashboardPaper[]; hook?: string }
 
-export function HypeCarousel({ papers }: Props) {
+export function HypeCarousel({ papers, hook }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
 
@@ -46,7 +46,7 @@ export function HypeCarousel({ papers }: Props) {
           <h2 className="text-sm font-bold text-white flex items-center gap-2">
             <TrendingUp size={14} className="text-yellow-400" /> Breakout Architectures
           </h2>
-          <p className="text-xs text-muted mt-0.5">{dailyHook(HOOKS)}</p>
+          <p className="text-xs text-muted mt-0.5">{hook || dailyHook(HOOKS)}</p>
         </div>
         <div className="flex gap-1">
           <button onClick={() => scroll('left')} className="p-1.5 rounded-lg hover:bg-surface-2 text-muted hover:text-white transition-all">

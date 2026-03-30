@@ -15,9 +15,9 @@ const HOOKS = [
   "Unknown authors, unmissable research — discover them first",
 ]
 
-interface Props { papers: DashboardPaper[] }
+interface Props { papers: DashboardPaper[]; hook?: string }
 
-export function UnderTheRadar({ papers }: Props) {
+export function UnderTheRadar({ papers, hook }: Props) {
   const navigate = useNavigate()
 
   const handleView = (paper: DashboardPaper) => {
@@ -39,7 +39,7 @@ export function UnderTheRadar({ papers }: Props) {
         <h2 className="text-sm font-bold text-white flex items-center gap-2">
           <Radio size={14} className="text-purple-400" /> Under the Radar
         </h2>
-        <p className="text-xs text-muted mt-0.5">{dailyHook(HOOKS)}</p>
+        <p className="text-xs text-muted mt-0.5">{hook || dailyHook(HOOKS)}</p>
       </div>
 
       <div className="space-y-2">

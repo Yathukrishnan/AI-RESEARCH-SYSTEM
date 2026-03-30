@@ -469,15 +469,48 @@ async def get_dashboard(db: TursoClient = Depends(get_db)):
 
     velocity_desk = list(await asyncio.gather(*[fetch_with_history(p) for p in vel_rows]))
 
+    # ── AI-generated section hooks (parallel, one per section) ────────────────
+    # Builder's Arsenal keeps hardcoded terminal-style hooks — skip it here.
+    from app.services.ai_service import AIValidationService
+    from app.core.config import settings
+    ai = AIValidationService(settings.OPENROUTER_API_KEY)
+
+    parsed_hype     = [_parse(dict(p)) for p in hype_rows]
+    parsed_grid     = [_parse(dict(p)) for p in grid_rows]
+    parsed_radar    = [_parse(dict(p)) for p in radar_rows]
+    parsed_theory   = [_parse(dict(p)) for p in theory_rows]
+    parsed_contra   = [_parse(dict(p)) for p in contrarian_rows]
+
+    (
+        hook_hype, hook_grid, hook_radar,
+        hook_velocity, hook_theory, hook_contra
+    ) = await asyncio.gather(
+        ai.generate_section_hook("Hype Carousel",    parsed_hype),
+        ai.generate_section_hook("Intelligence Grid", parsed_grid),
+        ai.generate_section_hook("Under the Radar",  parsed_radar),
+        ai.generate_section_hook("Velocity Desk",    velocity_desk),
+        ai.generate_section_hook("Theory Corner",    parsed_theory),
+        ai.generate_section_hook("Contrarian View",  parsed_contra),
+    )
+
     result = {
         "hero": _parse(dict(hero_rows[0])) if hero_rows else None,
-        "hype_carousel": [_parse(dict(p)) for p in hype_rows],
-        "intelligence_grid": [_parse(dict(p)) for p in grid_rows],
-        "under_the_radar": [_parse(dict(p)) for p in radar_rows],
+        "hype_carousel": parsed_hype,
+        "intelligence_grid": parsed_grid,
+        "under_the_radar": parsed_radar,
         "builders_arsenal": [_parse(dict(p)) for p in arsenal_rows],
         "velocity_desk": velocity_desk,
-        "theory_corner": [_parse(dict(p)) for p in theory_rows],
-        "contrarian_view": [_parse(dict(p)) for p in contrarian_rows],
+        "theory_corner": parsed_theory,
+        "contrarian_view": parsed_contra,
+        # AI-generated section hooks — empty string means frontend uses its fallback
+        "section_hooks": {
+            "hype_carousel":    hook_hype,
+            "intelligence_grid": hook_grid,
+            "under_the_radar":  hook_radar,
+            "velocity_desk":    hook_velocity,
+            "theory_corner":    hook_theory,
+            "contrarian_view":  hook_contra,
+        },
     }
 
     try:

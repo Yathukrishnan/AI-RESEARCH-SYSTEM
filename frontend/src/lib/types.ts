@@ -178,6 +178,15 @@ export interface DashboardPaper {
   score_history?: number[]
 }
 
+export interface SectionHooks {
+  hype_carousel?: string
+  intelligence_grid?: string
+  under_the_radar?: string
+  velocity_desk?: string
+  theory_corner?: string
+  contrarian_view?: string
+}
+
 export interface DashboardData {
   hero: DashboardPaper | null
   hype_carousel: DashboardPaper[]
@@ -187,6 +196,7 @@ export interface DashboardData {
   velocity_desk: DashboardPaper[]
   theory_corner: DashboardPaper[]
   contrarian_view: DashboardPaper[]
+  section_hooks?: SectionHooks
 }
 
 export interface DailyHook {
