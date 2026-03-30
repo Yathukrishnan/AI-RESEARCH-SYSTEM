@@ -1265,19 +1265,6 @@ function DatasetSummary() {
         </div>
       )}
 
-      {/* Top categories */}
-      {summary.top_categories?.length > 0 && (
-        <div>
-          <p className="text-xs font-semibold text-muted mb-2">Top Categories</p>
-          <div className="flex flex-wrap gap-2">
-            {summary.top_categories.map((c: any) => (
-              <span key={c.primary_category} className="text-xs px-3 py-1 bg-surface-2 border border-accent/15 rounded-full text-slate-300">
-                {c.primary_category || 'unknown'} <span className="font-bold text-accent-2">{c.cnt}</span>
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   )
 }
@@ -1648,6 +1635,8 @@ function ApisAdmin() {
       .catch(() => {})
   }, [])
 
+  const [testingApi, setTestingApi] = useState<string | null>(null)
+
   const testAllApis = async () => {
     setHealthLoading(true)
     try {
@@ -1657,6 +1646,18 @@ function ApisAdmin() {
       toast.error('Health check failed')
     } finally {
       setHealthLoading(false)
+    }
+  }
+
+  const testSingleApi = async (name: string) => {
+    setTestingApi(name)
+    try {
+      const res = await adminApi.getApiHealth()
+      setResults((prev) => ({ ...prev, [name]: (res.data || {})[name] ?? null }))
+    } catch {
+      toast.error('Test failed')
+    } finally {
+      setTestingApi(null)
     }
   }
 
@@ -1737,19 +1738,6 @@ function ApisAdmin() {
       color: 'text-blue-400', border: 'border-blue-500/20', bg: 'bg-blue-500/8',
       category: 'Social',
     },
-    // ── AI ───────────────────────────────────────────────────────────────────
-    {
-      name: 'OpenRouter (Gemini)',
-      configKey: 'OPENROUTER_API_URL',
-      description: 'AI paper validation via Gemini Flash Lite: relevance score, impact score, topic tags, summary, and hook generation. Requires OPENROUTER_API_KEY.',
-      defaultUrl: 'https://openrouter.ai/api/v1',
-      docsUrl: 'https://openrouter.ai/docs',
-      rateLimit: 'Model-tier quota',
-      auth: 'Bearer token (OPENROUTER_API_KEY)',
-      icon: Brain,
-      color: 'text-pink-400', border: 'border-pink-500/20', bg: 'bg-pink-500/8',
-      category: 'AI',
-    },
     // ── Infrastructure ───────────────────────────────────────────────────────
     {
       name: 'Turso',
@@ -1810,7 +1798,7 @@ function ApisAdmin() {
         <div>
           <h1 className="text-xl font-bold text-white">APIs & Third-Party Services</h1>
           <p className="text-sm text-muted mt-1">
-            Every external service this system depends on — 9 total across 5 categories.
+            Every external service this system depends on — 8 total across 4 categories.
           </p>
         </div>
         <button
@@ -1823,7 +1811,7 @@ function ApisAdmin() {
       </div>
 
       {/* API cards grouped by category */}
-      {(['Fetch', 'Enrich', 'Social', 'AI', 'Infrastructure'] as const).map((cat) => {
+      {(['Fetch', 'Enrich', 'Social', 'Infrastructure'] as const).map((cat) => {
         const meta = categoryMeta[cat]
         const catApis = apis.filter((a) => a.category === cat)
         return (
@@ -1858,12 +1846,22 @@ function ApisAdmin() {
                           </span>
                         )}
                         <StatusBadge name={name} />
-                        <a
-                          href={docsUrl} target="_blank" rel="noopener noreferrer"
-                          className="text-xs text-muted hover:text-accent-2 transition-colors ml-auto shrink-0"
-                        >
-                          Docs ↗
-                        </a>
+                        <div className="ml-auto flex items-center gap-2 shrink-0">
+                          <button
+                            onClick={() => testSingleApi(name)}
+                            disabled={testingApi === name || healthLoading}
+                            className="text-xs px-2 py-0.5 bg-accent/10 border border-accent/20 text-accent rounded-lg hover:bg-accent/20 disabled:opacity-50 transition-all flex items-center gap-1"
+                          >
+                            {testingApi === name ? <Loader2 size={10} className="animate-spin" /> : <Wifi size={10} />}
+                            Test
+                          </button>
+                          <a
+                            href={docsUrl} target="_blank" rel="noopener noreferrer"
+                            className="text-xs text-muted hover:text-accent-2 transition-colors"
+                          >
+                            Docs ↗
+                          </a>
+                        </div>
                       </div>
                       <p className="text-xs text-muted mt-0.5 leading-relaxed">{description}</p>
 
@@ -1910,7 +1908,7 @@ function ApisAdmin() {
           {[
             ['1. Fetch',   'ArXiv API → new AI/ML papers daily at 8:00 AM IST'],
             ['2. Enrich',  'Semantic Scholar (citations + h-index) · Papers with Code (GitHub stars)'],
-            ['3. Score',   'TF-IDF keyword + Gemini Flash Lite AI validation → current_score'],
+            ['3. Score',   'TF-IDF keyword + Gemini Flash Lite (via OpenRouter) AI validation → current_score'],
             ['4. Social',  'HuggingFace · HackerNews · OpenAlex → trending/rising/gem scores (every 4h)'],
             ['5. Rank',    'Normalize globally (0–1) · assign trend labels using quality + social signals'],
             ['6. Cache',   'Redis caches feed responses (5 min TTL) to reduce Turso DB load'],
