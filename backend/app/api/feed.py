@@ -513,6 +513,65 @@ async def get_daily_hooks(db: TursoClient = Depends(get_db)):
     return {"date": today, "hooks": [dict(h) for h in hooks]}
 
 
+@router.get("/papers/list")
+async def get_papers_by_type(
+    type: str = Query("trending"),
+    page: int = Query(0, ge=0),
+    db: TursoClient = Depends(get_db),
+):
+    """
+    Returns paginated papers for a category page.
+    type: trending | gems | new | rising | all
+    """
+    limit = 24
+    offset = page * limit
+    base = "is_deleted = 0 AND is_duplicate = 0"
+
+    if type == "trending":
+        where = f"{base} AND is_trending = 1"
+        order = "normalized_score DESC"
+        params: list = []
+    elif type == "gems":
+        where = f"{base} AND is_above_threshold = 1 AND view_count < 30"
+        order = "normalized_score DESC"
+        params = []
+    elif type == "new":
+        from datetime import timedelta
+        since = (datetime.now(timezone.utc) - timedelta(hours=48)).isoformat()
+        where = f"{base} AND created_at > ?"
+        order = "COALESCE(normalized_score, keyword_score, 0) DESC"
+        params = [since]
+    elif type == "rising":
+        where = (
+            f"{base} AND is_above_threshold = 1 "
+            "AND date(COALESCE(last_scored_at, created_at)) >= date('now', '-3 days')"
+        )
+        order = "normalized_score DESC"
+        params = []
+    else:
+        where = f"{base} AND is_above_threshold = 1"
+        order = "normalized_score DESC"
+        params = []
+
+    try:
+        total = await db.count("papers", where, params or None)
+        rows = await db.fetchall(
+            f"SELECT rowid as id, * FROM papers WHERE {where} ORDER BY {order} LIMIT ? OFFSET ?",
+            params + [limit, offset]
+        )
+    except Exception as e:
+        return {"papers": [], "total": 0, "page": page, "has_more": False, "type": type}
+
+    papers = [_parse(dict(r)) for r in rows]
+    return {
+        "papers": papers,
+        "total": total,
+        "page": page,
+        "has_more": (offset + len(papers)) < total,
+        "type": type,
+    }
+
+
 @router.get("/stats")
 async def get_stats(db: TursoClient = Depends(get_db)):
     """Public stats endpoint for the feed header."""

@@ -50,6 +50,7 @@ export const feedApi = {
   interact: (paperId: number, action: string) =>
     api.post(`/interact/${paperId}?action=${action}`),
   getStats: () => api.get('/stats'),
+  getPapersByType: (type: string, page = 0) => api.get(`/papers/list?type=${type}&page=${page}`),
 }
 
 export const papersApi = {

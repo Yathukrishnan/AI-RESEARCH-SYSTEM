@@ -18,78 +18,107 @@ def _hook_or_title(paper: Dict, max_len: int = 85) -> str:
     return title[:max_len - 1].rsplit(" ", 1)[0] + "…"
 
 
+_TRENDING_HOOKS = [
+    "This week's highest-ranked papers are in",
+    "The AI community is moving fast — see what's hot",
+    "Top-scoring papers researchers are reading right now",
+    "What the field is buzzing about this week",
+    "High-signal papers climbing the rankings",
+]
+
+_GEM_HOOKS = [
+    "High-impact papers flying under the radar",
+    "Brilliant work that hasn't gone viral — yet",
+    "Overlooked papers with exceptional scores",
+    "Before everyone else finds these",
+    "Strong signal, low noise — undiscovered gems",
+]
+
+_NEW_HOOKS = [
+    "Fresh papers just landed in the feed",
+    "New research added since yesterday",
+    "Latest arXiv submissions, scored and ranked",
+    "Just in — new papers across AI & ML",
+    "Newest additions to the intelligence feed",
+]
+
+_RISING_HOOKS = [
+    "Papers gaining momentum fast",
+    "Rising stars in this week's rankings",
+    "Scores climbing — papers to watch",
+    "These papers are accelerating in the rankings",
+    "Early movers gaining traction across the field",
+]
+
+
 async def generate_alerts(db: TursoClient) -> List[Dict]:
     alerts = []
 
     # ── Trending papers ───────────────────────────────────────────────────
-    trending = await db.fetchall(
-        "SELECT rowid as id, title, hook_text FROM papers "
-        "WHERE is_trending = 1 AND is_deleted = 0 "
-        "ORDER BY normalized_score DESC LIMIT 10"
-    )
-    if trending:
-        for p in random.sample(trending, min(2, len(trending))):
+    try:
+        trending_count = await db.count("papers", "is_trending = 1 AND is_deleted = 0")
+        if trending_count:
             alerts.append({
                 "type": "trending",
                 "emoji": "🔥",
-                "title": _hook_or_title(p),
-                "message": "Trending · tap to read",
-                "paper_id": p["id"],
+                "title": random.choice(_TRENDING_HOOKS),
+                "message": f"{trending_count} trending papers · tap to explore",
+                "navigate_to": "trending",
             })
+    except Exception:
+        pass
 
-    # ── New papers (last 24 h) ─────────────────────────────────────────
-    since = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
-    new_papers = await db.fetchall(
-        "SELECT rowid as id, title, hook_text FROM papers "
-        "WHERE created_at > ? AND is_deleted = 0 "
-        "AND (hook_text IS NOT NULL AND hook_text != '') "
-        "ORDER BY COALESCE(normalized_score, keyword_score, 0) DESC LIMIT 10",
-        [since]
-    )
-    if new_papers:
-        for p in random.sample(new_papers, min(2, len(new_papers))):
+    # ── New papers (last 48 h) ─────────────────────────────────────────
+    try:
+        since = (datetime.now(timezone.utc) - timedelta(hours=48)).isoformat()
+        new_count = await db.count(
+            "papers", "created_at > ? AND is_deleted = 0", [since]
+        )
+        if new_count:
             alerts.append({
                 "type": "new_papers",
                 "emoji": "✨",
-                "title": _hook_or_title(p),
-                "message": "Just added · tap to read",
-                "paper_id": p["id"],
+                "title": random.choice(_NEW_HOOKS),
+                "message": f"{new_count} papers added · tap to explore",
+                "navigate_to": "new",
             })
+    except Exception:
+        pass
 
     # ── Hidden gems ───────────────────────────────────────────────────
-    gems = await db.fetchall(
-        "SELECT rowid as id, title, hook_text FROM papers "
-        "WHERE normalized_score > 0.55 AND view_count < 20 AND is_deleted = 0 "
-        "AND (hook_text IS NOT NULL AND hook_text != '') "
-        "ORDER BY normalized_score DESC LIMIT 10"
-    )
-    if gems:
-        p = random.choice(gems)
-        alerts.append({
-            "type": "hidden_gems",
-            "emoji": "💎",
-            "title": _hook_or_title(p),
-            "message": "Hidden gem · barely seen · tap to read",
-            "paper_id": p["id"],
-        })
+    try:
+        gems_count = await db.count(
+            "papers",
+            "normalized_score > 0.3 AND view_count < 30 AND is_deleted = 0 AND is_above_threshold = 1",
+        )
+        if gems_count:
+            alerts.append({
+                "type": "hidden_gems",
+                "emoji": "💎",
+                "title": random.choice(_GEM_HOOKS),
+                "message": f"{gems_count} hidden gems · tap to explore",
+                "navigate_to": "gems",
+            })
+    except Exception:
+        pass
 
-    # ── Rising papers (high score, recently scored) ───────────────────
-    rising = await db.fetchall(
-        "SELECT rowid as id, title, hook_text FROM papers "
-        "WHERE is_above_threshold = 1 AND is_deleted = 0 "
-        "AND (hook_text IS NOT NULL AND hook_text != '') "
-        "AND date(COALESCE(last_scored_at, created_at)) >= date('now', '-3 days') "
-        "ORDER BY normalized_score DESC LIMIT 10"
-    )
-    if rising:
-        p = random.choice(rising)
-        alerts.append({
-            "type": "high_growth",
-            "emoji": "📈",
-            "title": _hook_or_title(p),
-            "message": "Rising fast · tap to read",
-            "paper_id": p["id"],
-        })
+    # ── Rising papers ─────────────────────────────────────────────────
+    try:
+        rising_count = await db.count(
+            "papers",
+            "is_above_threshold = 1 AND is_deleted = 0 "
+            "AND date(COALESCE(last_scored_at, created_at)) >= date('now', '-3 days')",
+        )
+        if rising_count:
+            alerts.append({
+                "type": "high_growth",
+                "emoji": "📈",
+                "title": random.choice(_RISING_HOOKS),
+                "message": f"{rising_count} papers rising · tap to explore",
+                "navigate_to": "rising",
+            })
+    except Exception:
+        pass
 
     random.shuffle(alerts)
-    return alerts[:5]
+    return alerts[:4]

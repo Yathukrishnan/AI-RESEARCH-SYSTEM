@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { HomePage } from '@/pages/HomePage'
 import { PaperPage } from '@/pages/PaperPage'
+import { CategoryPage } from '@/pages/CategoryPage'
 import { AdminPage } from '@/pages/AdminPage'
 import { LoginPage } from '@/pages/LoginPage'
 import { useAuthStore } from '@/stores/authStore'
@@ -16,6 +17,7 @@ export default function App() {
     <Routes>
       <Route path="/" element={<HomePage />} />
       <Route path="/paper/:id" element={<PaperPage />} />
+      <Route path="/papers/:type" element={<CategoryPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route
         path="/admin/*"

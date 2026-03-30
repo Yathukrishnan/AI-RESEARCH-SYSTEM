@@ -31,10 +31,10 @@ export function AlertBanner({ alerts }: Props) {
   const cur = visible[current % visible.length]
 
   const handleClick = () => {
-    if (cur.paper_id) {
+    if (cur.navigate_to) {
+      navigate(`/papers/${cur.navigate_to}`)
+    } else if (cur.paper_id) {
       navigate(`/paper/${cur.paper_id}`)
-    } else {
-      navigate('/')
     }
   }
 
