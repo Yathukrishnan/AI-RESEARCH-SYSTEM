@@ -493,7 +493,8 @@ async def refresh_social_signals(batch_size: int = 200) -> int:
 
     logger.info(f"Social signals: refreshing {len(rows)} papers…")
     enricher = EnrichmentService(settings.SEMANTIC_SCHOLAR_API_URL, settings.PAPERS_WITH_CODE_API_URL)
-    sem = asyncio.Semaphore(5)
+    from app.services.enrichment_service import SOCIAL_CONCURRENCY
+    sem = asyncio.Semaphore(SOCIAL_CONCURRENCY)
     now = datetime.now(timezone.utc).isoformat()
 
     from app.services.scorer import (

@@ -1374,10 +1374,13 @@ function SchedulerStatus() {
   useEffect(() => { load() }, [])
 
   const JOB_LABELS: Record<string, { label: string; color: string }> = {
-    daily_fetch:              { label: 'Daily Fetch (8:00 AM IST / 2:30 AM UTC)', color: 'text-cyan-400'   },
-    weekly_rescore:           { label: 'Weekly Rescore (Sun 2:00 AM UTC)',         color: 'text-purple-400' },
-    weekly_content_transition:{ label: 'Content Transition (Mon 00:05 UTC)',       color: 'text-orange-400' },
-    enrich_pending:           { label: 'Enrich Papers (every hour)',               color: 'text-green-400'  },
+    daily_fetch:              { label: 'Daily Fetch (8:00 AM IST / 2:30 AM UTC)',     color: 'text-cyan-400'   },
+    weekly_rescore:           { label: 'Weekly Rescore (Sun 2:00 AM UTC)',             color: 'text-purple-400' },
+    weekly_content_transition:{ label: 'Content Transition (Tue 00:05 UTC)',           color: 'text-orange-400' },
+    enrich_pending:           { label: 'Enrich Papers (every hour)',                   color: 'text-green-400'  },
+    daily_hooks:              { label: 'Hook Generation (3:15 AM UTC)',                color: 'text-yellow-400' },
+    hourly_fetch_catchup:     { label: 'Fetch Catch-up (every hour at :35)',           color: 'text-slate-400'  },
+    social_signals:           { label: 'Social Signals (every 4h · HF/HN/OpenAlex)', color: 'text-pink-400'   },
   }
 
   const formatNext = (iso: string | null) => {
@@ -1426,118 +1429,324 @@ function SchedulerStatus() {
   )
 }
 
+// ── SocialSignalsCard ─────────────────────────────────────────────────────────
+
+function SocialSignalsCard() {
+  const [data, setData] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const [triggering, setTriggering] = useState(false)
+
+  const load = () => {
+    setLoading(true)
+    adminApi.getSocialSignals()
+      .then((r) => setData(r.data))
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }
+
+  useEffect(() => { load() }, [])
+
+  const handleTrigger = async () => {
+    setTriggering(true)
+    try {
+      await adminApi.triggerSocialSignals(200)
+      toast.success('Social signal refresh started (200 papers)')
+    } catch {
+      toast.error('Failed to start refresh')
+    } finally {
+      setTriggering(false)
+    }
+  }
+
+  const toIST = (s: string | null) => {
+    if (!s) return '—'
+    return new Date(s).toLocaleString('en-IN', {
+      timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short',
+      hour: '2-digit', minute: '2-digit', hour12: true,
+    }) + ' IST'
+  }
+
+  if (loading) return (
+    <div className="bg-surface border border-accent/15 rounded-2xl px-5 py-6 flex items-center gap-2 text-muted text-sm">
+      <Loader2 size={14} className="animate-spin" /> Loading social signals…
+    </div>
+  )
+  if (!data) return null
+
+  const bars = [
+    { label: 'HuggingFace upvotes', value: data.with_hf_data, pct: data.hf_pct, color: 'bg-yellow-400' },
+    { label: 'HackerNews discussion', value: data.with_hn_data, pct: data.hn_pct, color: 'bg-orange-400' },
+    { label: 'Citation velocity', value: data.with_velocity, pct: data.vel_pct, color: 'bg-purple-400' },
+  ]
+
+  return (
+    <div className="bg-surface border border-accent/15 rounded-2xl overflow-hidden">
+      <div className="px-5 py-3 border-b border-accent/10 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <TrendingUp size={15} className="text-accent-2" />
+          <h2 className="text-sm font-semibold text-white">Social Signals</h2>
+          <span className="text-xs text-muted bg-surface-2 border border-accent/10 px-2 py-0.5 rounded-full">
+            {data.checked.toLocaleString()} checked
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          {(data.unchecked ?? 0) > 0 && (
+            <button
+              onClick={handleTrigger} disabled={triggering}
+              className="flex items-center gap-1.5 text-xs px-2.5 py-1 bg-accent-2/10 border border-accent-2/30 text-accent-2 rounded-lg hover:bg-accent-2/20 disabled:opacity-50 transition-all"
+            >
+              {triggering ? <Loader2 size={11} className="animate-spin" /> : <Play size={11} />}
+              Refresh {data.unchecked} papers
+            </button>
+          )}
+          <button onClick={load} className="text-xs text-muted hover:text-white flex items-center gap-1 transition-colors">
+            <RefreshCw size={11} /> Refresh
+          </button>
+        </div>
+      </div>
+
+      <div className="px-5 py-4 space-y-4">
+        <div className="space-y-2.5">
+          {bars.map(({ label, value, pct, color }) => (
+            <div key={label} className="flex items-center gap-3">
+              <p className="text-xs text-muted w-44 shrink-0">{label}</p>
+              <div className="flex-1 h-1.5 bg-surface-3 rounded-full overflow-hidden">
+                <div className={`h-full ${color} rounded-full transition-all duration-700`} style={{ width: `${pct}%` }} />
+              </div>
+              <span className="text-xs font-mono text-white w-24 text-right shrink-0 tabular-nums">
+                {value.toLocaleString()} <span className="text-muted">({pct}%)</span>
+              </span>
+            </div>
+          ))}
+        </div>
+
+        <p className="text-xs text-muted">Last refreshed: <span className="text-white">{toIST(data.last_refresh)}</span></p>
+
+        {/* Top HuggingFace */}
+        {data.top_hf?.length > 0 && (
+          <div>
+            <p className="text-xs font-semibold text-slate-400 mb-2 flex items-center gap-1.5">
+              <Star size={11} className="text-yellow-400" /> Top by HuggingFace Upvotes
+            </p>
+            <div className="space-y-1">
+              {data.top_hf.map((p: any) => (
+                <div key={p.arxiv_id} className="flex items-center justify-between gap-3 text-xs">
+                  <p className="text-white line-clamp-1 flex-1">{p.title}</p>
+                  <span className="text-yellow-400 font-bold shrink-0 tabular-nums">{p.hf_upvotes} ▲</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Top HackerNews */}
+        {data.top_hn?.length > 0 && (
+          <div>
+            <p className="text-xs font-semibold text-slate-400 mb-2 flex items-center gap-1.5">
+              <Activity size={11} className="text-orange-400" /> Top HackerNews Discussion
+            </p>
+            <div className="space-y-1">
+              {data.top_hn.map((p: any) => (
+                <div key={p.arxiv_id} className="flex items-center justify-between gap-3 text-xs">
+                  <p className="text-white line-clamp-1 flex-1">{p.title}</p>
+                  <span className="text-orange-400 font-bold shrink-0 tabular-nums">
+                    {p.hn_points}pts · {p.hn_comments}c
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {data.with_any_signal === 0 && (
+          <p className="text-xs text-muted">No social signals collected yet. Social signal refresh runs every 4 hours automatically.</p>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── APIs & Enrichment ─────────────────────────────────────────────────────────
 
 function ApisAdmin() {
-  const [config, setConfig] = useState<Record<string, string>>({})
-  const [loading, setLoading] = useState(true)
-  const [testing, setTesting] = useState<string | null>(null)
-  const [results, setResults] = useState<Record<string, 'ok' | 'fail' | null>>({})
+  const [healthLoading, setHealthLoading] = useState(false)
+  const [results, setResults] = useState<Record<string, { ok: boolean; status: number; latency_ms: number; error?: string } | null>>({})
 
-  useEffect(() => {
-    adminApi.getConfig()
-      .then((r) => {
-        const map: Record<string, string> = {}
-        for (const item of (r.data || [])) map[item.key] = item.value
-        setConfig(map)
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false))
-  }, [])
-
-  const testApi = async (name: string, url: string) => {
-    setTesting(name)
+  const testAllApis = async () => {
+    setHealthLoading(true)
     try {
-      const res = await fetch(url, { signal: AbortSignal.timeout(5000) })
-      setResults((r) => ({ ...r, [name]: res.ok ? 'ok' : 'fail' }))
+      const res = await adminApi.getApiHealth()
+      setResults(res.data || {})
     } catch {
-      setResults((r) => ({ ...r, [name]: 'fail' }))
+      toast.error('Health check failed')
     } finally {
-      setTesting(null)
+      setHealthLoading(false)
     }
   }
 
   const apis = [
     {
       name: 'ArXiv API',
-      key: 'ARXIV_API_URL',
-      url: config['ARXIV_API_URL'] || 'http://export.arxiv.org/api/query?search_query=ti:transformer&max_results=1',
-      description: 'Used to fetch new AI research papers daily',
+      description: 'Fetches new AI/ML research papers daily. Free, no auth required.',
+      url: 'export.arxiv.org/api/query',
+      rateLimit: '~3 req/s, polite use',
       icon: Database,
       color: 'text-cyan-400',
       border: 'border-cyan-500/20',
       bg: 'bg-cyan-500/8',
+      category: 'Fetch',
     },
     {
       name: 'Semantic Scholar',
-      key: 'SEMANTIC_SCHOLAR_API_URL',
-      url: config['SEMANTIC_SCHOLAR_API_URL'] || 'https://api.semanticscholar.org/graph/v1',
-      description: 'Enriches papers with citation counts and author h-index',
+      description: 'Enriches papers with citation counts, influential citations, and author h-indices via batch API.',
+      url: 'api.semanticscholar.org/graph/v1',
+      rateLimit: '100 req/5 min (free tier)',
       icon: Brain,
       color: 'text-purple-400',
       border: 'border-purple-500/20',
       bg: 'bg-purple-500/8',
+      category: 'Enrich',
     },
     {
       name: 'Papers with Code',
-      key: 'PAPERS_WITH_CODE_API_URL',
-      url: config['PAPERS_WITH_CODE_API_URL'] || 'https://paperswithcode.com/api/v1',
-      description: 'Links papers to GitHub repositories and code implementations',
+      description: 'Links papers to GitHub repositories and official code implementations.',
+      url: 'paperswithcode.com/api/v1',
+      rateLimit: '5 concurrent, 300ms delay',
       icon: Zap,
       color: 'text-green-400',
       border: 'border-green-500/20',
       bg: 'bg-green-500/8',
+      category: 'Enrich',
+    },
+    {
+      name: 'HuggingFace Papers',
+      description: 'Retrieves community upvotes for papers listed on HuggingFace Papers. Used in trending score.',
+      url: 'huggingface.co/api/papers/{arxiv_id}',
+      rateLimit: 'Polite: 50ms delay, 3 concurrent',
+      icon: TrendingUp,
+      color: 'text-yellow-400',
+      border: 'border-yellow-500/20',
+      bg: 'bg-yellow-500/8',
+      category: 'Social',
+    },
+    {
+      name: 'HackerNews Algolia',
+      description: 'Searches HN for discussion threads mentioning the paper. Points + comments feed the trending score.',
+      url: 'hn.algolia.com/api/v1/search',
+      rateLimit: 'Polite: 50ms delay, 3 concurrent',
+      icon: Activity,
+      color: 'text-orange-400',
+      border: 'border-orange-500/20',
+      bg: 'bg-orange-500/8',
+      category: 'Social',
+    },
+    {
+      name: 'OpenAlex',
+      description: 'Free scholarly metadata. Used for citation velocity (year-over-year growth) alongside Semantic Scholar.',
+      url: 'api.openalex.org/works/arxiv:{id}',
+      rateLimit: '10 req/s polite pool, 120ms delay',
+      icon: BookOpen,
+      color: 'text-blue-400',
+      border: 'border-blue-500/20',
+      bg: 'bg-blue-500/8',
+      category: 'Social',
+    },
+    {
+      name: 'OpenRouter (Gemini)',
+      description: 'AI validation via Gemini Flash Lite. Scores relevance, generates hooks, topic tags and summaries.',
+      url: 'openrouter.ai/api/v1',
+      rateLimit: 'Rate varies by model/tier',
+      icon: Brain,
+      color: 'text-pink-400',
+      border: 'border-pink-500/20',
+      bg: 'bg-pink-500/8',
+      category: 'AI',
     },
   ]
 
+  const categoryColors: Record<string, string> = {
+    Fetch: 'text-cyan-400 bg-cyan-500/10 border-cyan-500/20',
+    Enrich: 'text-purple-400 bg-purple-500/10 border-purple-500/20',
+    Social: 'text-yellow-400 bg-yellow-500/10 border-yellow-500/20',
+    AI: 'text-pink-400 bg-pink-500/10 border-pink-500/20',
+  }
+
   const statusIcon = (name: string) => {
     const r = results[name]
-    if (testing === name) return <Loader2 size={14} className="animate-spin text-muted" />
-    if (r === 'ok') return <CheckCircle size={14} className="text-success" />
-    if (r === 'fail') return <WifiOff size={14} className="text-red-400" />
-    return <Wifi size={14} className="text-muted" />
+    if (healthLoading) return <Loader2 size={13} className="animate-spin text-muted" />
+    if (!r) return <Wifi size={13} className="text-muted" />
+    if (r.ok) return <CheckCircle size={13} className="text-green-400" />
+    return <WifiOff size={13} className="text-red-400" />
+  }
+
+  const statusBadge = (name: string) => {
+    const r = results[name]
+    if (!r) return null
+    if (r.ok) return (
+      <span className="text-xs text-green-400 bg-green-400/10 border border-green-400/20 px-1.5 py-0.5 rounded-full">
+        {r.status} · {r.latency_ms}ms
+      </span>
+    )
+    return (
+      <span className="text-xs text-red-400 bg-red-400/10 border border-red-400/20 px-1.5 py-0.5 rounded-full">
+        {r.status || 'timeout'} {r.error ? `· ${r.error}` : ''}
+      </span>
+    )
   }
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-bold text-white">Data Sources & APIs</h1>
-      <p className="text-sm text-muted">These APIs are used to fetch, enrich and enhance paper data automatically. Test connectivity below.</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-bold text-white">Data Sources & APIs</h1>
+          <p className="text-sm text-muted mt-1">All external APIs used by the pipeline — with rate limits and live health check.</p>
+        </div>
+        <button
+          onClick={testAllApis} disabled={healthLoading}
+          className="flex items-center gap-2 px-4 py-2 bg-accent/10 border border-accent/30 text-accent rounded-xl text-sm hover:bg-accent/20 disabled:opacity-50 transition-all shrink-0"
+        >
+          {healthLoading ? <Loader2 size={14} className="animate-spin" /> : <Wifi size={14} />}
+          {healthLoading ? 'Checking…' : 'Check All'}
+        </button>
+      </div>
 
-      {loading ? (
-        <div className="flex items-center gap-2 text-muted"><Loader2 size={16} className="animate-spin" /> Loading…</div>
-      ) : (
-        <div className="space-y-4">
-          {apis.map(({ name, url, description, icon: Icon, color, border, bg }) => (
-            <div key={name} className={`bg-surface border ${border} rounded-2xl p-5`}>
-              <div className="flex items-start justify-between gap-4">
+      {/* API cards grouped by category */}
+      {(['Fetch', 'Enrich', 'Social', 'AI'] as const).map((cat) => {
+        const catApis = apis.filter((a) => a.category === cat)
+        return (
+          <div key={cat} className="space-y-3">
+            <div className="flex items-center gap-2">
+              <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full border ${categoryColors[cat]}`}>{cat}</span>
+              <div className="h-px flex-1 bg-accent/10" />
+            </div>
+            {catApis.map(({ name, description, url, rateLimit, icon: Icon, color, border, bg }) => (
+              <div key={name} className={`bg-surface border ${border} rounded-2xl p-4`}>
                 <div className="flex items-start gap-3">
-                  <div className={`w-10 h-10 rounded-xl ${bg} border ${border} flex items-center justify-center shrink-0`}>
-                    <Icon size={18} className={color} />
+                  <div className={`w-9 h-9 rounded-xl ${bg} border ${border} flex items-center justify-center shrink-0`}>
+                    <Icon size={16} className={color} />
                   </div>
-                  <div>
-                    <div className="flex items-center gap-2">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <h3 className="text-sm font-semibold text-white">{name}</h3>
                       {statusIcon(name)}
-                      {results[name] === 'ok' && <span className="text-xs text-success bg-success/10 px-2 py-0.5 rounded-full">reachable</span>}
-                      {results[name] === 'fail' && <span className="text-xs text-red-400 bg-red-400/10 px-2 py-0.5 rounded-full">unreachable</span>}
+                      {statusBadge(name)}
                     </div>
                     <p className="text-xs text-muted mt-0.5">{description}</p>
-                    <p className="text-xs font-mono text-slate-500 mt-1 truncate max-w-xs">{url}</p>
+                    <div className="flex items-center gap-4 mt-1.5">
+                      <span className="text-xs font-mono text-slate-500 truncate">{url}</span>
+                      <span className="text-xs text-slate-500 shrink-0 flex items-center gap-1">
+                        <Clock size={10} /> {rateLimit}
+                      </span>
+                    </div>
                   </div>
                 </div>
-                <button
-                  onClick={() => testApi(name, url)}
-                  disabled={testing === name}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-surface-2 border border-accent/20 text-muted hover:text-white text-xs rounded-xl transition-all disabled:opacity-50 shrink-0"
-                >
-                  {testing === name ? <Loader2 size={12} className="animate-spin" /> : <Wifi size={12} />}
-                  Test
-                </button>
               </div>
-            </div>
-          ))}
-        </div>
-      )}
+            ))}
+          </div>
+        )
+      })}
+
+      <SocialSignalsCard />
 
       <SchedulerStatus />
 
@@ -1545,11 +1754,12 @@ function ApisAdmin() {
         <h2 className="text-sm font-semibold text-white">Pipeline Overview</h2>
         <div className="space-y-2 text-xs text-muted">
           {[
-            ['1. Fetch', 'ArXiv API → downloads new papers matching AI/ML categories'],
-            ['2. Enrich', 'Semantic Scholar + Papers with Code → adds citations, stars, GitHub links'],
-            ['3. Score', 'TF-IDF keyword scoring + Gemini AI validation (via OpenRouter)'],
-            ['4. Rank', 'Normalize scores globally (0–1), assign trend labels'],
-            ['5. Serve', 'Feed API returns sorted sections: Trending, Rising, Hidden Gems'],
+            ['1. Fetch',   'ArXiv API → downloads new AI/ML papers daily at 8:00 AM IST'],
+            ['2. Enrich',  'Semantic Scholar → citations + h-indices · Papers with Code → GitHub stars'],
+            ['3. Score',   'TF-IDF keyword score + Gemini AI validation (OpenRouter) → current_score'],
+            ['4. Social',  'HuggingFace + HackerNews + OpenAlex → trending/rising/gem/platform scores'],
+            ['5. Rank',    'Normalize globally (0–1), assign trend labels using quality + social signals'],
+            ['6. Serve',   'Feed returns Trending / Rising / Hidden Gems / Top Picks sections'],
           ].map(([step, desc]) => (
             <div key={step} className="flex gap-3">
               <span className="text-accent-2 font-semibold shrink-0 w-16">{step}</span>

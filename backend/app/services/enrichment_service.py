@@ -15,6 +15,18 @@ SS_CHUNK_DELAY  = 4.0   # seconds between SS batch chunks  (2 calls × 2s margin
 PWC_CONCURRENCY = 5     # concurrent Papers-with-Code calls per chunk
 PWC_DELAY       = 0.3   # seconds between each PwC call slot
 
+# Social signal API delays (prevents 429s on free-tier APIs)
+# HuggingFace: no documented limit but be polite
+# HackerNews Algolia: very generous (no auth, but avoid hammering)
+# OpenAlex: 10 req/sec polite pool — keep ≥ 0.1s between calls
+HF_DELAY = 0.05   # 50 ms — HuggingFace Papers
+HN_DELAY = 0.05   # 50 ms — HackerNews Algolia
+OA_DELAY = 0.12   # 120 ms — OpenAlex (stays well under 10 req/sec)
+
+# Max concurrent papers when fetching social signals:
+# 3 papers × 3 API calls = 9 requests in flight → safe under OA 10 req/sec limit
+SOCIAL_CONCURRENCY = 3
+
 
 class EnrichmentService:
     def __init__(self, semantic_scholar_url: str, papers_with_code_url: str):
@@ -269,6 +281,7 @@ class EnrichmentService:
 
     async def get_huggingface_data(self, arxiv_id: str) -> Dict:
         """Fetch upvotes from HuggingFace Papers (free, no auth)."""
+        await asyncio.sleep(HF_DELAY)
         try:
             async with httpx.AsyncClient(headers=self.headers, timeout=10) as client:
                 resp = await client.get(f"https://huggingface.co/api/papers/{arxiv_id}")
@@ -283,6 +296,7 @@ class EnrichmentService:
 
     async def get_hackernews_data(self, arxiv_id: str, title: str) -> Dict:
         """Search HackerNews for paper discussion via Algolia API (free, no auth)."""
+        await asyncio.sleep(HN_DELAY)
         try:
             async with httpx.AsyncClient(headers=self.headers, timeout=10) as client:
                 resp = await client.get(
@@ -304,7 +318,9 @@ class EnrichmentService:
         """
         Fetch citation count + year-over-year velocity from OpenAlex.
         Free, no auth — 100k requests/day. Uses polite pool via User-Agent email.
+        Rate limit: 10 req/sec — OA_DELAY (120 ms) keeps us safely under that.
         """
+        await asyncio.sleep(OA_DELAY)
         try:
             from datetime import datetime
             hdrs = {**self.headers, "User-Agent": "AI-Research-Intelligence/1.0 (mailto:research@ai.system)"}

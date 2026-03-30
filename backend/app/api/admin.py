@@ -370,6 +370,97 @@ async def enrichment_status(db: TursoClient = Depends(get_db), _: dict = Depends
     }
 
 
+@router.get("/social-signals")
+async def social_signals_status(db: TursoClient = Depends(get_db), _: dict = Depends(require_admin)):
+    """Coverage stats for HuggingFace, HackerNews, and OpenAlex social signals."""
+    total_visible = await db.count("papers", "is_above_threshold = 1 AND is_deleted = 0 AND is_duplicate = 0")
+    with_hf       = await db.count("papers", "hf_upvotes > 0 AND is_deleted = 0")
+    with_hn       = await db.count("papers", "hn_points > 0 AND is_deleted = 0")
+    with_vel      = await db.count("papers", "citation_velocity > 0 AND is_deleted = 0")
+    with_any      = await db.count("papers", "(hf_upvotes > 0 OR hn_points > 0 OR citation_velocity > 0) AND is_deleted = 0")
+    checked       = await db.count("papers", "social_checked_at IS NOT NULL AND is_deleted = 0")
+    unchecked     = await db.count(
+        "papers",
+        "is_above_threshold = 1 AND is_deleted = 0 AND is_duplicate = 0 AND social_checked_at IS NULL"
+    )
+    last_row = await db.fetchone(
+        "SELECT social_checked_at FROM papers WHERE social_checked_at IS NOT NULL "
+        "ORDER BY social_checked_at DESC LIMIT 1"
+    )
+    top_hf = await db.fetchall(
+        "SELECT rowid as id, arxiv_id, title, hf_upvotes, hn_points, trending_score "
+        "FROM papers WHERE hf_upvotes > 0 AND is_deleted = 0 ORDER BY hf_upvotes DESC LIMIT 5"
+    )
+    top_hn = await db.fetchall(
+        "SELECT rowid as id, arxiv_id, title, hn_points, hn_comments, trending_score "
+        "FROM papers WHERE hn_points > 0 AND is_deleted = 0 ORDER BY hn_points DESC LIMIT 5"
+    )
+    total = await db.count("papers", "is_deleted = 0 AND is_duplicate = 0")
+    return {
+        "total_visible": total_visible,
+        "checked": checked,
+        "unchecked": unchecked,
+        "with_hf_data": with_hf,
+        "with_hn_data": with_hn,
+        "with_velocity": with_vel,
+        "with_any_signal": with_any,
+        "last_refresh": last_row["social_checked_at"] if last_row else None,
+        "hf_pct": round(with_hf / total * 100, 1) if total else 0,
+        "hn_pct": round(with_hn / total * 100, 1) if total else 0,
+        "vel_pct": round(with_vel / total * 100, 1) if total else 0,
+        "top_hf": top_hf,
+        "top_hn": top_hn,
+    }
+
+
+@router.post("/trigger-social-signals")
+async def trigger_social_signals(
+    batch: int = 200,
+    background_tasks: BackgroundTasks = None,
+    _: dict = Depends(require_admin),
+):
+    """Manually trigger a social signal refresh (HF, HN, OpenAlex)."""
+    from app.tasks.paper_tasks import refresh_social_signals
+    batch = min(max(batch, 1), 500)
+    background_tasks.add_task(refresh_social_signals, batch)
+    return {"status": "started", "batch_size": batch}
+
+
+@router.get("/api-health")
+async def api_health(_: dict = Depends(require_admin)):
+    """
+    Server-side connectivity check for all external APIs.
+    Tests a lightweight known-good URL for each service.
+    Returns {api_name: {ok: bool, status: int, latency_ms: int}}.
+    """
+    import httpx, time
+
+    checks = {
+        "ArXiv":              "http://export.arxiv.org/api/query?search_query=ti:transformer&max_results=1",
+        "Semantic Scholar":   "https://api.semanticscholar.org/graph/v1/paper/649def34f8be52c8b66281af98ae884c09aef38b?fields=title",
+        "Papers with Code":   "https://paperswithcode.com/api/v1/papers/?limit=1",
+        "HuggingFace Papers": "https://huggingface.co/api/papers/2303.08774",
+        "HackerNews Algolia": "https://hn.algolia.com/api/v1/search?query=arxiv&tags=story&hitsPerPage=1",
+        "OpenAlex":           "https://api.openalex.org/works/arxiv:2303.08774?select=id",
+        "OpenRouter":         "https://openrouter.ai/api/v1/models",
+    }
+    results = {}
+    headers = {"User-Agent": "AI-Research-Intelligence/1.0"}
+
+    async with httpx.AsyncClient(headers=headers, timeout=8) as client:
+        for name, url in checks.items():
+            t0 = time.monotonic()
+            try:
+                resp = await client.get(url)
+                ms = int((time.monotonic() - t0) * 1000)
+                results[name] = {"ok": resp.status_code < 400, "status": resp.status_code, "latency_ms": ms}
+            except Exception as e:
+                ms = int((time.monotonic() - t0) * 1000)
+                results[name] = {"ok": False, "status": 0, "latency_ms": ms, "error": str(e)[:80]}
+
+    return results
+
+
 @router.post("/reset-failed-enrichment")
 async def reset_failed_enrichment(db: TursoClient = Depends(get_db), _: dict = Depends(require_admin)):
     """Reset papers marked enriched but got no data (likely due to 429 rate limiting).

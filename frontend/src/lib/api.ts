@@ -101,6 +101,9 @@ export const adminApi = {
   getUsers: () => api.get('/admin/users'),
   updateUserRole: (id: number, role: string) => api.patch(`/admin/users/${id}/role?role=${role}`),
   getDatasetSummary: () => api.get('/admin/dataset-summary'),
+  getSocialSignals: () => api.get('/admin/social-signals'),
+  triggerSocialSignals: (batch = 200) => api.post(`/admin/trigger-social-signals?batch=${batch}`),
+  getApiHealth: () => api.get('/admin/api-health'),
 }
 
 export default api
