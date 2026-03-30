@@ -149,3 +149,37 @@ def compute_all_category_scores(row: dict) -> dict:
         "gem_score":      compute_gem_score(row),
         "platform_score": compute_platform_score(row),
     }
+
+
+def compute_blended_score(row: dict, weights: Optional[Dict] = None) -> tuple:
+    """
+    Final paper score = base (70%) + social boost (30%).
+
+    Social boost is only applied when the paper has actual social signal data
+    (HF upvotes, HN activity, or citation velocity).  Papers with no social
+    data yet get the pure base score so early-life scoring is unaffected.
+
+    Social boost formula:
+        social = 0.50 × trending_score + 0.30 × rising_score + 0.20 × platform_score
+        final  = 0.70 × base + 0.30 × social
+
+    gem_score is excluded from the blend — it is used only for trend-label
+    assignment (Hidden Gem), not for ranking.
+
+    Returns (score, score_type).
+    """
+    base, score_type = compute_score(row, weights)
+
+    hf = float(row.get("hf_upvotes") or 0)
+    hn = float(row.get("hn_points") or 0) + float(row.get("hn_comments") or 0)
+    cv = float(row.get("citation_velocity") or 0)
+
+    if hf > 0 or hn > 0 or cv > 0:
+        ts = compute_trending_score(row)
+        rs = compute_rising_score(row)
+        ps = compute_platform_score(row)
+        social = 0.50 * ts + 0.30 * rs + 0.20 * ps
+        blended = 0.70 * base + 0.30 * social
+        return round(min(1.0, blended), 4), score_type
+
+    return base, score_type

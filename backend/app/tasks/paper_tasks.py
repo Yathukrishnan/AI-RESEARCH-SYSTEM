@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from app.core.turso import db as turso_db
 from app.core.database import get_system_config
 from app.core.config import settings
-from app.services.scorer import compute_score, normalize_batch, trend_label
+from app.services.scorer import compute_score, compute_blended_score, normalize_batch, trend_label
 from app.services.ai_service import AIValidationService, compute_tfidf_keyword_score, AI_KEYWORDS
 from app.services.enrichment_service import EnrichmentService
 from app.services.arxiv_fetcher import fetch_papers_for_date_range, fetch_single_paper
@@ -100,7 +100,7 @@ async def rescore_all_papers():
     for paper in rows:
         try:
             old_score = float(paper.get("current_score") or 0)
-            score, score_type = compute_score(dict(paper))
+            score, score_type = compute_blended_score(dict(paper))
 
             last_scored = paper.get("last_scored_at")
             hours = 168.0  # default 1 week
@@ -119,11 +119,18 @@ async def rescore_all_papers():
             stale = int(paper.get("stale_score_weeks") or 0)
             stale = stale + 1 if abs(score - old_score) < 0.001 else 0
 
+            # Recompute category scores too so they stay fresh
+            from app.services.scorer import compute_all_category_scores
+            cat = compute_all_category_scores(dict(paper))
+
             await turso_db.execute(
                 """UPDATE papers SET previous_score=?, current_score=?, score_type=?,
-                   scr_value=?, is_trending=?, stale_score_weeks=?, last_scored_at=?
+                   scr_value=?, is_trending=?, stale_score_weeks=?, last_scored_at=?,
+                   trending_score=?, rising_score=?, gem_score=?, platform_score=?
                    WHERE rowid=?""",
-                [old_score, score, score_type, scr, is_trending, stale, now.isoformat(), paper["id"]]
+                [old_score, score, score_type, scr, is_trending, stale, now.isoformat(),
+                 cat["trending_score"], cat["rising_score"], cat["gem_score"], cat["platform_score"],
+                 paper["id"]]
             )
             await turso_db.execute(
                 "INSERT INTO score_history (paper_id, score, score_type, scr_value) VALUES (?, ?, ?, ?)",
@@ -288,14 +295,13 @@ async def enrich_pending_papers(batch_size: int = 500):
     all_rescore_ids = enriched_ids + new_github_ids
     if all_rescore_ids:
         from app.tasks.analysis import normalize_scores, assign_trend_labels
-        from app.services.scorer import compute_score
         now_dt = datetime.now(timezone.utc)
         for pid in all_rescore_ids:
             try:
                 row = await turso_db.fetchone("SELECT rowid as id, * FROM papers WHERE rowid=?", [pid])
                 if not row:
                     continue
-                score, score_type = compute_score(dict(row))
+                score, score_type = compute_blended_score(dict(row))
                 await turso_db.execute(
                     "UPDATE papers SET current_score=?, score_type=?, last_scored_at=? WHERE rowid=?",
                     [score, score_type, now_dt.isoformat(), pid]
@@ -570,6 +576,30 @@ async def refresh_social_signals(batch_size: int = 200) -> int:
                     logger.error(f"Social signal DB update error: {e}")
 
     logger.info(f"Social signals: updated {len(updates)}/{len(rows)} papers")
+
+    # Re-score updated papers with blended formula so social signals feed into current_score
+    if updates:
+        from app.tasks.analysis import normalize_scores, assign_trend_labels
+        now_dt = datetime.now(timezone.utc)
+        updated_ids = [u["id"] for u in updates]
+        for pid in updated_ids:
+            try:
+                row = await turso_db.fetchone("SELECT rowid as id, * FROM papers WHERE rowid=?", [pid])
+                if not row:
+                    continue
+                score, score_type = compute_blended_score(dict(row))
+                await turso_db.execute(
+                    "UPDATE papers SET current_score=?, score_type=?, last_scored_at=? WHERE rowid=?",
+                    [score, score_type, now_dt.isoformat(), pid]
+                )
+            except Exception as e:
+                logger.debug(f"Social rescore error {pid}: {e}")
+
+        # Re-normalize and re-assign trend labels so feed rankings reflect social data
+        await normalize_scores()
+        await assign_trend_labels()
+        logger.info(f"Social signals: rescored {len(updated_ids)} papers, labels updated")
+
     return len(updates)
 
 
