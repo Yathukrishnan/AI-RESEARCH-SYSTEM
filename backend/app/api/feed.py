@@ -38,7 +38,8 @@ def _parse(p: dict) -> dict:
 
 
 async def _current_week(db: TursoClient) -> int:
-    """How many weeks since system start (minimum 1)."""
+    """Week number anchored to Tuesdays. New week starts every Tuesday 00:00 UTC."""
+    from datetime import timedelta
     start_str = await get_system_config("SYSTEM_START_DATE")
     if not start_str:
         return 1
@@ -46,8 +47,15 @@ async def _current_week(db: TursoClient) -> int:
         start = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
         if start.tzinfo is None:
             start = start.replace(tzinfo=timezone.utc)
-        days = (datetime.now(timezone.utc) - start).days
-        return max(1, days // 7 + 1)
+        # Find first Tuesday on or after system start (weekday 1 = Tuesday)
+        days_to_tuesday = (1 - start.weekday()) % 7
+        epoch = (start + timedelta(days=days_to_tuesday)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        now = datetime.now(timezone.utc)
+        if now < epoch:
+            return 1
+        return max(1, (now.date() - epoch.date()).days // 7 + 1)
     except Exception:
         return 1
 

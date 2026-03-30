@@ -151,10 +151,35 @@ async def lifespan(app: FastAPI):
     # 4. Start scheduler
     start_scheduler()
 
-    # 5. Startup catch-up: if today's daily fetch was missed (e.g. server was down
+    # 5. Unlock any papers held back by old display_week = current+1 logic.
+    #    Recompute current_week (Tuesday-anchored) and pull forward papers
+    #    whose display_week is still in the future due to the old formula.
+    try:
+        from datetime import datetime, timedelta, timezone as tz
+        from app.core.database import get_system_config as _gsc
+        _start_str = await _gsc("SYSTEM_START_DATE")
+        if _start_str:
+            _start = datetime.fromisoformat(_start_str.replace("Z", "+00:00"))
+            if _start.tzinfo is None:
+                _start = _start.replace(tzinfo=tz.utc)
+            _days_to_tue = (1 - _start.weekday()) % 7
+            _epoch = (_start + timedelta(days=_days_to_tue)).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+            _now = datetime.now(tz.utc)
+            _cur_week = max(1, (_now.date() - _epoch.date()).days // 7 + 1) if _now >= _epoch else 1
+            _res = await turso_db.execute(
+                "UPDATE papers SET display_week = ? WHERE display_week > ? AND is_deleted = 0",
+                [_cur_week, _cur_week]
+            )
+            _unlocked = _res.get("rows_affected", 0) if _res else 0
+            if _unlocked:
+                logger.info(f"Unlocked {_unlocked} held-back papers → display_week set to {_cur_week}")
+    except Exception as e:
+        logger.warning(f"display_week unlock failed (non-fatal): {e}")
+
+    # 6. Startup catch-up: if today's daily fetch was missed (e.g. server was down
     #    at 02:30 UTC), run it now so papers never go a full day without being fetched.
-    #    APScheduler's misfire_grace_time handles restarts within the grace window,
-    #    but this explicit check is a belt-and-braces guarantee.
     try:
         from datetime import datetime, timezone as tz
         now_utc = datetime.now(tz.utc)
@@ -174,7 +199,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Startup catch-up check failed (non-fatal): {e}")
 
-    # 6. Check if full analysis has been run
+    # 7. Check if full analysis has been run
     analysis_done = await get_system_config("ANALYSIS_COMPLETE")
 
     if analysis_done != "1":
@@ -196,7 +221,7 @@ async def lifespan(app: FastAPI):
         else:
             logger.info("All papers scored. System ready.")
 
-    # 7. Generate missing hooks in background (for existing papers without hook_text)
+    # 8. Generate missing hooks in background (for existing papers without hook_text)
     try:
         hooks_needed = await turso_db.count(
             "papers",

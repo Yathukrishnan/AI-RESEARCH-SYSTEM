@@ -127,10 +127,11 @@ def setup_scheduler():
         misfire_grace_time=82800,
     )
 
-    # Weekly content transition Monday 00:05 UTC – flip display week
+    # Weekly content transition: every Tuesday 00:05 UTC
+    # New week starts → last week's fetched papers become visible in feed
     scheduler.add_job(
         _weekly_content_transition,
-        CronTrigger(day_of_week="mon", hour=0, minute=5, timezone="UTC"),
+        CronTrigger(day_of_week="tue", hour=0, minute=5, timezone="UTC"),
         id="weekly_content_transition",
         replace_existing=True,
         coalesce=True,
