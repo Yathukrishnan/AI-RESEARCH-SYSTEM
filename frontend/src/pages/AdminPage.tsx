@@ -1567,11 +1567,10 @@ function ServiceConfigCard() {
   }, [])
 
   const serviceColors: Record<string, string> = {
-    Turso:     'text-blue-400',
-    OpenRouter:'text-pink-400',
-    Auth:      'text-yellow-400',
-    Redis:     'text-red-400',
-    CORS:      'text-slate-400',
+    Turso: 'text-blue-400',
+    Auth:  'text-yellow-400',
+    Redis: 'text-red-400',
+    CORS:  'text-slate-400',
   }
 
   return (

@@ -524,15 +524,6 @@ async def service_config(_: dict = Depends(require_admin)):
             "description": "JWT bearer token for Turso database authentication",
         },
         {
-            "key": "OPENROUTER_API_KEY",
-            "label": "OpenRouter API Key",
-            "service": "OpenRouter",
-            "set": bool(settings.OPENROUTER_API_KEY),
-            "preview": _mask(settings.OPENROUTER_API_KEY) if settings.OPENROUTER_API_KEY else None,
-            "required": True,
-            "description": "sk-or-v1-… key for Gemini Flash Lite via OpenRouter",
-        },
-        {
             "key": "SECRET_KEY",
             "label": "JWT Secret Key",
             "service": "Auth",
