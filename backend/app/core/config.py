@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     ARXIV_API_URL: str = "http://export.arxiv.org/api/query"
     SEMANTIC_SCHOLAR_API_URL: str = "https://api.semanticscholar.org/graph/v1"
     PAPERS_WITH_CODE_API_URL: str = "https://paperswithcode.com/api/v1"
+    HUGGINGFACE_API_URL: str = "https://huggingface.co/api/papers"
+    HACKERNEWS_API_URL: str = "https://hn.algolia.com/api/v1"
+    OPENALEX_API_URL: str = "https://api.openalex.org"
+    OPENROUTER_API_URL: str = "https://openrouter.ai/api/v1"
 
     # ── App ───────────────────────────────────────────────────────────────────
     APP_NAME: str = "AI Research Intelligence System"

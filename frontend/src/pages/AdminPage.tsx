@@ -1635,6 +1635,18 @@ function ServiceConfigCard() {
 function ApisAdmin() {
   const [healthLoading, setHealthLoading] = useState(false)
   const [results, setResults] = useState<Record<string, { ok: boolean; status: number; latency_ms: number; error?: string; detail?: string } | null>>({})
+  const [configMap, setConfigMap] = useState<Record<string, string>>({})
+
+  // Load editable config values (API URLs stored in admin_config)
+  useEffect(() => {
+    adminApi.getConfig()
+      .then((r) => {
+        const map: Record<string, string> = {}
+        for (const item of (r.data || [])) map[item.key] = item.value
+        setConfigMap(map)
+      })
+      .catch(() => {})
+  }, [])
 
   const testAllApis = async () => {
     setHealthLoading(true)
@@ -1648,13 +1660,14 @@ function ApisAdmin() {
     }
   }
 
-  // All 9 external services, grouped by role
+  // All 9 external services — configKey links to admin_config for live URL display
   const apis = [
     // ── Fetch ────────────────────────────────────────────────────────────────
     {
       name: 'ArXiv API',
+      configKey: 'ARXIV_API_URL',
       description: 'Fetches new AI/ML research papers daily. Free, no auth required.',
-      url: 'export.arxiv.org/api/query',
+      defaultUrl: 'http://export.arxiv.org/api/query',
       docsUrl: 'https://info.arxiv.org/help/api/',
       rateLimit: '3 s delay between pages',
       auth: 'None',
@@ -1665,8 +1678,9 @@ function ApisAdmin() {
     // ── Enrich ───────────────────────────────────────────────────────────────
     {
       name: 'Semantic Scholar',
+      configKey: 'SEMANTIC_SCHOLAR_API_URL',
       description: 'Batch citation counts, influential citation counts, and author h-indices.',
-      url: 'api.semanticscholar.org/graph/v1',
+      defaultUrl: 'https://api.semanticscholar.org/graph/v1',
       docsUrl: 'https://api.semanticscholar.org/api-docs/',
       rateLimit: '100 req / 5 min (free tier)',
       auth: 'None (public)',
@@ -1676,8 +1690,9 @@ function ApisAdmin() {
     },
     {
       name: 'Papers with Code',
+      configKey: 'PAPERS_WITH_CODE_API_URL',
       description: 'Links papers to GitHub repos and official code implementations. Provides github_url, stars, forks.',
-      url: 'paperswithcode.com/api/v1',
+      defaultUrl: 'https://paperswithcode.com/api/v1',
       docsUrl: 'https://paperswithcode.com/api/v1/docs/',
       rateLimit: '5 concurrent, 300 ms slots',
       auth: 'None',
@@ -1688,8 +1703,9 @@ function ApisAdmin() {
     // ── Social ───────────────────────────────────────────────────────────────
     {
       name: 'HuggingFace Papers',
+      configKey: 'HUGGINGFACE_API_URL',
       description: 'Community upvotes per paper. Feeds the trending_score — viral HF papers surface faster.',
-      url: 'huggingface.co/api/papers/{arxiv_id}',
+      defaultUrl: 'https://huggingface.co/api/papers',
       docsUrl: 'https://huggingface.co/papers',
       rateLimit: '50 ms delay, 3 concurrent',
       auth: 'None',
@@ -1699,8 +1715,9 @@ function ApisAdmin() {
     },
     {
       name: 'HackerNews Algolia',
+      configKey: 'HACKERNEWS_API_URL',
       description: 'Searches HN stories mentioning the paper. Points + comments contribute to trending_score.',
-      url: 'hn.algolia.com/api/v1/search',
+      defaultUrl: 'https://hn.algolia.com/api/v1',
       docsUrl: 'https://hn.algolia.com/api',
       rateLimit: '50 ms delay, 3 concurrent',
       auth: 'None',
@@ -1710,8 +1727,9 @@ function ApisAdmin() {
     },
     {
       name: 'OpenAlex',
+      configKey: 'OPENALEX_API_URL',
       description: 'Free scholarly metadata for citation velocity (year-over-year citation growth rate).',
-      url: 'api.openalex.org/works/arxiv:{id}',
+      defaultUrl: 'https://api.openalex.org',
       docsUrl: 'https://docs.openalex.org/',
       rateLimit: '10 req/s polite pool, 120 ms delay',
       auth: 'None (email in User-Agent)',
@@ -1722,11 +1740,12 @@ function ApisAdmin() {
     // ── AI ───────────────────────────────────────────────────────────────────
     {
       name: 'OpenRouter (Gemini)',
-      description: 'AI paper validation via Gemini Flash Lite: relevance score, impact score, topic tags, summary, and hook generation.',
-      url: 'openrouter.ai/api/v1/chat/completions',
+      configKey: 'OPENROUTER_API_URL',
+      description: 'AI paper validation via Gemini Flash Lite: relevance score, impact score, topic tags, summary, and hook generation. Requires OPENROUTER_API_KEY.',
+      defaultUrl: 'https://openrouter.ai/api/v1',
       docsUrl: 'https://openrouter.ai/docs',
-      rateLimit: 'Model-tier quota — OPENROUTER_API_KEY required',
-      auth: 'Bearer token',
+      rateLimit: 'Model-tier quota',
+      auth: 'Bearer token (OPENROUTER_API_KEY)',
       icon: Brain,
       color: 'text-pink-400', border: 'border-pink-500/20', bg: 'bg-pink-500/8',
       category: 'AI',
@@ -1734,8 +1753,9 @@ function ApisAdmin() {
     // ── Infrastructure ───────────────────────────────────────────────────────
     {
       name: 'Turso',
+      configKey: null,
       description: 'Primary database — libSQL / SQLite edge DB. Stores all papers, scores, config, logs, author cache.',
-      url: '*.turso.io (libsql:// + https://)',
+      defaultUrl: '*.turso.io  (set via TURSO_DATABASE_URL)',
       docsUrl: 'https://docs.turso.tech/',
       rateLimit: 'Plan-based row/request limits',
       auth: 'JWT token (TURSO_AUTH_TOKEN)',
@@ -1745,8 +1765,9 @@ function ApisAdmin() {
     },
     {
       name: 'Redis',
-      description: 'Optional in-memory cache for feed responses (5-min TTL). Gracefully disabled if not available.',
-      url: 'redis://localhost:6379',
+      configKey: null,
+      description: 'Optional in-memory cache for feed responses (5-min TTL). Gracefully disabled if not configured.',
+      defaultUrl: 'redis://localhost:6379  (set via REDIS_URL)',
       docsUrl: 'https://redis.io/docs/',
       rateLimit: 'N/A (local or managed)',
       auth: 'Optional (REDIS_URL env var)',
@@ -1814,43 +1835,61 @@ function ApisAdmin() {
               <div className="h-px flex-1 bg-accent/10" />
             </div>
 
-            {catApis.map(({ name, description, url, docsUrl, rateLimit, auth, icon: Icon, color, border, bg }) => (
-              <div key={name} className={`bg-surface border ${border} rounded-2xl p-4`}>
-                <div className="flex items-start gap-3">
-                  {/* Icon */}
-                  <div className={`w-9 h-9 rounded-xl ${bg} border ${border} flex items-center justify-center shrink-0`}>
-                    <Icon size={16} className={color} />
-                  </div>
+            {catApis.map(({ name, configKey, description, defaultUrl, docsUrl, rateLimit, auth, icon: Icon, color, border, bg }) => {
+              // Use the live config value from DB if available, else fall back to hardcoded default
+              const liveUrl = configKey && configMap[configKey] ? configMap[configKey] : defaultUrl
+              const isFromConfig = configKey && !!configMap[configKey]
 
-                  {/* Content */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="text-sm font-semibold text-white">{name}</h3>
-                      <StatusBadge name={name} />
-                      <a
-                        href={docsUrl} target="_blank" rel="noopener noreferrer"
-                        className="text-xs text-muted hover:text-accent-2 transition-colors ml-auto shrink-0"
-                      >
-                        Docs ↗
-                      </a>
+              return (
+                <div key={name} className={`bg-surface border ${border} rounded-2xl p-4`}>
+                  <div className="flex items-start gap-3">
+                    {/* Icon */}
+                    <div className={`w-9 h-9 rounded-xl ${bg} border ${border} flex items-center justify-center shrink-0`}>
+                      <Icon size={16} className={color} />
                     </div>
-                    <p className="text-xs text-muted mt-0.5 leading-relaxed">{description}</p>
 
-                    {/* Meta row */}
-                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2">
-                      <span className="text-xs font-mono text-slate-500">{url}</span>
-                      <span className="text-xs text-slate-500 flex items-center gap-1">
-                        <Clock size={10} /> {rateLimit}
-                      </span>
-                      <span className={`text-xs flex items-center gap-1 ${auth === 'None' || auth.startsWith('None') ? 'text-green-500' : 'text-yellow-500'}`}>
-                        {auth === 'None' || auth.startsWith('None') ? <ShieldOff size={10} /> : <Shield size={10} />}
-                        {auth}
-                      </span>
+                    {/* Content */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="text-sm font-semibold text-white">{name}</h3>
+                        {configKey && (
+                          <span className="text-xs font-mono text-slate-500 bg-surface-2 border border-accent/10 px-1.5 py-0.5 rounded">
+                            {configKey}
+                          </span>
+                        )}
+                        <StatusBadge name={name} />
+                        <a
+                          href={docsUrl} target="_blank" rel="noopener noreferrer"
+                          className="text-xs text-muted hover:text-accent-2 transition-colors ml-auto shrink-0"
+                        >
+                          Docs ↗
+                        </a>
+                      </div>
+                      <p className="text-xs text-muted mt-0.5 leading-relaxed">{description}</p>
+
+                      {/* URL row — shows live config value */}
+                      <div className="mt-2 flex items-center gap-2 bg-surface-2 border border-accent/10 rounded-lg px-2.5 py-1.5">
+                        <span className="text-xs font-mono text-slate-300 truncate flex-1">{liveUrl}</span>
+                        {isFromConfig && (
+                          <span className="text-xs text-green-500 shrink-0">from config</span>
+                        )}
+                      </div>
+
+                      {/* Meta row */}
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1.5">
+                        <span className="text-xs text-slate-500 flex items-center gap-1">
+                          <Clock size={10} /> {rateLimit}
+                        </span>
+                        <span className={`text-xs flex items-center gap-1 ${auth === 'None' || auth.startsWith('None') ? 'text-green-500' : 'text-yellow-500'}`}>
+                          {auth === 'None' || auth.startsWith('None') ? <ShieldOff size={10} /> : <Shield size={10} />}
+                          {auth}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )
       })}

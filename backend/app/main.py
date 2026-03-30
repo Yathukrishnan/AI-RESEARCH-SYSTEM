@@ -52,13 +52,22 @@ async def seed_defaults():
 
     # Config entries
     configs = [
-        ("ARXIV_API_URL", settings.ARXIV_API_URL, "arXiv API endpoint", 1, 0),
-        ("SEMANTIC_SCHOLAR_API_URL", settings.SEMANTIC_SCHOLAR_API_URL, "Semantic Scholar API", 1, 0),
-        ("PAPERS_WITH_CODE_API_URL", settings.PAPERS_WITH_CODE_API_URL, "Papers with Code API", 1, 0),
-        ("PAPERS_PER_DAY", str(settings.PAPERS_PER_DAY), "Papers shown per day", 1, 0),
-        ("SCR_THRESHOLD", str(settings.SCR_THRESHOLD), "Trend detection threshold", 1, 0),
-        ("SCORE_THRESHOLD", "0.25", "Minimum normalized_score to show in feed (0-1)", 1, 0),
-        ("OPENROUTER_API_KEY", "***PROTECTED***", "OpenRouter key (env only, not editable)", 0, 1),
+        # ── Paper sources ────────────────────────────────────────────────────
+        ("ARXIV_API_URL",            settings.ARXIV_API_URL,            "arXiv API endpoint",                      1, 0),
+        # ── Enrichment APIs ──────────────────────────────────────────────────
+        ("SEMANTIC_SCHOLAR_API_URL", settings.SEMANTIC_SCHOLAR_API_URL, "Semantic Scholar API (citations, h-index)", 1, 0),
+        ("PAPERS_WITH_CODE_API_URL", settings.PAPERS_WITH_CODE_API_URL, "Papers with Code API (GitHub repos)",      1, 0),
+        # ── Social signal APIs ───────────────────────────────────────────────
+        ("HUGGINGFACE_API_URL",      settings.HUGGINGFACE_API_URL,      "HuggingFace Papers API (upvotes)",          1, 0),
+        ("HACKERNEWS_API_URL",       settings.HACKERNEWS_API_URL,       "HackerNews Algolia API (discussion)",       1, 0),
+        ("OPENALEX_API_URL",         settings.OPENALEX_API_URL,         "OpenAlex API (citation velocity)",          1, 0),
+        # ── AI / LLM ─────────────────────────────────────────────────────────
+        ("OPENROUTER_API_URL",       settings.OPENROUTER_API_URL,       "OpenRouter API endpoint (Gemini Flash Lite)", 1, 0),
+        ("OPENROUTER_API_KEY",       "***PROTECTED***",                 "OpenRouter key (env only, not editable)",  0, 1),
+        # ── Feed behaviour ───────────────────────────────────────────────────
+        ("PAPERS_PER_DAY",           str(settings.PAPERS_PER_DAY),      "Papers shown per day",                     1, 0),
+        ("SCR_THRESHOLD",            str(settings.SCR_THRESHOLD),        "Trend detection threshold",                1, 0),
+        ("SCORE_THRESHOLD",          "0.25",                             "Minimum normalized_score for feed (0–1)", 1, 0),
     ]
     for key, value, desc, editable, protected in configs:
         try:
