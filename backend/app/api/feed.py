@@ -475,16 +475,21 @@ async def get_dashboard(db: TursoClient = Depends(get_db)):
     from app.core.config import settings
     ai = AIValidationService(settings.OPENROUTER_API_KEY)
 
+    parsed_hero     = _parse(dict(hero_rows[0])) if hero_rows else None
     parsed_hype     = [_parse(dict(p)) for p in hype_rows]
     parsed_grid     = [_parse(dict(p)) for p in grid_rows]
     parsed_radar    = [_parse(dict(p)) for p in radar_rows]
     parsed_theory   = [_parse(dict(p)) for p in theory_rows]
     parsed_contra   = [_parse(dict(p)) for p in contrarian_rows]
 
+    # Hero hook: enrich with author h_index context for the Authority directive
+    hero_for_hook = ([parsed_hero] if parsed_hero else [])
+
     (
-        hook_hype, hook_grid, hook_radar,
+        hook_hero, hook_hype, hook_grid, hook_radar,
         hook_velocity, hook_theory, hook_contra
     ) = await asyncio.gather(
+        ai.generate_section_hook("Hero Hook",        hero_for_hook),
         ai.generate_section_hook("Hype Carousel",    parsed_hype),
         ai.generate_section_hook("Intelligence Grid", parsed_grid),
         ai.generate_section_hook("Under the Radar",  parsed_radar),
@@ -494,7 +499,7 @@ async def get_dashboard(db: TursoClient = Depends(get_db)):
     )
 
     result = {
-        "hero": _parse(dict(hero_rows[0])) if hero_rows else None,
+        "hero": parsed_hero,
         "hype_carousel": parsed_hype,
         "intelligence_grid": parsed_grid,
         "under_the_radar": parsed_radar,
@@ -502,8 +507,9 @@ async def get_dashboard(db: TursoClient = Depends(get_db)):
         "velocity_desk": velocity_desk,
         "theory_corner": parsed_theory,
         "contrarian_view": parsed_contra,
-        # AI-generated section hooks — empty string means frontend uses its fallback
+        # AI-generated section hooks — empty string → frontend falls back to hardcoded
         "section_hooks": {
+            "hero":             hook_hero,
             "hype_carousel":    hook_hype,
             "intelligence_grid": hook_grid,
             "under_the_radar":  hook_radar,

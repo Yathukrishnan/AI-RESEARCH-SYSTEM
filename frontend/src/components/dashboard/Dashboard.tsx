@@ -61,7 +61,7 @@ export function Dashboard() {
   return (
     <div className="space-y-5">
       {/* Row 1: Hero - full width */}
-      {data.hero && <HeroHook paper={data.hero} />}
+      {data.hero && <HeroHook paper={data.hero} hook={data.section_hooks?.hero} />}
 
       {/* Row 2: Hype Carousel */}
       {data.hype_carousel.length > 0 && (

@@ -179,6 +179,7 @@ export interface DashboardPaper {
 }
 
 export interface SectionHooks {
+  hero?: string
   hype_carousel?: string
   intelligence_grid?: string
   under_the_radar?: string
