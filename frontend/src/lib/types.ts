@@ -168,6 +168,8 @@ export interface DashboardPaper {
   hn_points?: number
   hn_comments?: number
   citation_velocity?: number
+  ai_relevance_score?: number
+  ai_impact_score?: number
   trending_score?: number
   rising_score?: number
   gem_score?: number
