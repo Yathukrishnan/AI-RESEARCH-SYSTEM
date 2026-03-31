@@ -188,30 +188,47 @@ export function HeroHook({ paper, hook }: Props) {
             )}
           </div>
 
-          {/* Why it matters — signal chips, always shows citations */}
+          {/* Why it matters — social signals, falls back to AI scores for new papers */}
           {(() => {
-            const signals: { icon: React.ElementType; value: string; label: string; color: string; bg: string; dim?: boolean }[] = []
-            signals.push({
-              icon: Quote,
-              value: fmt(paper.citation_count || 0),
-              label: 'citations',
-              color: (paper.citation_count || 0) > 0 ? 'text-indigo-300' : 'text-slate-500',
-              bg: (paper.citation_count || 0) > 0 ? 'bg-indigo-500/10 border-indigo-500/25' : 'bg-white/4 border-white/10',
-              dim: (paper.citation_count || 0) === 0,
-            })
-            if ((paper.hf_upvotes || 0) > 0)
-              signals.push({ icon: ThumbsUp, value: fmt(paper.hf_upvotes!), label: 'HF upvotes', color: 'text-orange-300', bg: 'bg-orange-500/10 border-orange-500/25' })
-            if ((paper.hn_points || 0) > 0)
-              signals.push({ icon: TrendingUp, value: fmt(paper.hn_points!), label: 'HN points', color: 'text-amber-300', bg: 'bg-amber-500/10 border-amber-500/25' })
-            if ((paper.github_stars || 0) > 0)
-              signals.push({ icon: Star, value: fmt(paper.github_stars!), label: 'GitHub stars', color: 'text-yellow-300', bg: 'bg-yellow-500/10 border-yellow-500/25' })
-            if (hIndex > 0)
-              signals.push({ icon: Crown, value: `h${hIndex}`, label: 'h-index', color: 'text-yellow-400', bg: 'bg-yellow-500/10 border-yellow-500/25' })
+            const hasSocial = (paper.citation_count || 0) > 0 || (paper.hf_upvotes || 0) > 0
+              || (paper.hn_points || 0) > 0 || (paper.github_stars || 0) > 0
+
+            const signals: { icon: React.ElementType; value: string; label: string; color: string; bg: string }[] = []
+
+            if (hasSocial) {
+              if ((paper.citation_count || 0) > 0)
+                signals.push({ icon: Quote, value: fmt(paper.citation_count), label: 'citations', color: 'text-indigo-300', bg: 'bg-indigo-500/10 border-indigo-500/25' })
+              if ((paper.hf_upvotes || 0) > 0)
+                signals.push({ icon: ThumbsUp, value: fmt(paper.hf_upvotes!), label: 'HF upvotes', color: 'text-orange-300', bg: 'bg-orange-500/10 border-orange-500/25' })
+              if ((paper.hn_points || 0) > 0)
+                signals.push({ icon: TrendingUp, value: fmt(paper.hn_points!), label: 'HN points', color: 'text-amber-300', bg: 'bg-amber-500/10 border-amber-500/25' })
+              if ((paper.github_stars || 0) > 0)
+                signals.push({ icon: Star, value: fmt(paper.github_stars!), label: 'GitHub stars', color: 'text-yellow-300', bg: 'bg-yellow-500/10 border-yellow-500/25' })
+              if (hIndex > 0)
+                signals.push({ icon: Crown, value: `h${hIndex}`, label: 'h-index', color: 'text-yellow-400', bg: 'bg-yellow-500/10 border-yellow-500/25' })
+            } else {
+              // No social data yet — show AI-derived scores as the signal
+              const relevance = Math.round((paper.ai_relevance_score || 0) * 100)
+              const impact = Math.round((paper.ai_impact_score || 0) * 100)
+              const qualityScore = Math.round((paper.normalized_score || 0) * 100)
+              if (relevance > 0)
+                signals.push({ icon: Zap, value: `${relevance}%`, label: 'AI relevance', color: 'text-accent-2', bg: 'bg-accent/10 border-accent/25' })
+              if (impact > 0)
+                signals.push({ icon: TrendingUp, value: `${impact}%`, label: 'AI impact', color: 'text-emerald-300', bg: 'bg-emerald-500/10 border-emerald-500/25' })
+              if (qualityScore > 0)
+                signals.push({ icon: Star, value: `${qualityScore}`, label: 'quality score', color: 'text-yellow-300', bg: 'bg-yellow-500/10 border-yellow-500/25' })
+              if (hIndex > 0)
+                signals.push({ icon: Crown, value: `h${hIndex}`, label: 'h-index', color: 'text-yellow-400', bg: 'bg-yellow-500/10 border-yellow-500/25' })
+            }
+
+            if (!signals.length) return null
             return (
               <div className="flex flex-wrap items-center gap-2 mb-4">
-                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Why it matters:</span>
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                  {hasSocial ? 'Why it matters:' : 'AI scored:'}
+                </span>
                 {signals.map(s => (
-                  <span key={s.label} className={`flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full border ${s.bg} ${s.color} ${s.dim ? 'opacity-50' : ''}`}>
+                  <span key={s.label} className={`flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full border ${s.bg} ${s.color}`}>
                     <s.icon size={10} />
                     {s.value} <span className="font-normal opacity-70">{s.label}</span>
                   </span>
