@@ -187,49 +187,59 @@ export function HeroHook({ paper }: Props) {
             )}
           </div>
 
-          {/* Why it matters — social signals, falls back to AI scores for new papers */}
+          {/* Community signals — HF + HN always shown, others when non-zero */}
           {(() => {
-            const hasSocial = (paper.citation_count || 0) > 0 || (paper.hf_upvotes || 0) > 0
-              || (paper.hn_points || 0) > 0 || (paper.github_stars || 0) > 0
+            type Chip = { icon: React.ElementType; value: string; label: string; color: string; bg: string; dim?: boolean }
+            const chips: Chip[] = []
 
-            const signals: { icon: React.ElementType; value: string; label: string; color: string; bg: string }[] = []
+            // HuggingFace upvotes — always visible (hero is guaranteed to have HF or HN)
+            chips.push({
+              icon: ThumbsUp,
+              value: fmt(paper.hf_upvotes || 0),
+              label: 'HF upvotes',
+              color: (paper.hf_upvotes || 0) > 0 ? 'text-orange-300' : 'text-slate-500',
+              bg:    (paper.hf_upvotes || 0) > 0 ? 'bg-orange-500/12 border-orange-500/30' : 'bg-white/4 border-white/10',
+              dim:   (paper.hf_upvotes || 0) === 0,
+            })
 
-            if (hasSocial) {
-              if ((paper.citation_count || 0) > 0)
-                signals.push({ icon: Quote, value: fmt(paper.citation_count), label: 'citations', color: 'text-indigo-300', bg: 'bg-indigo-500/10 border-indigo-500/25' })
-              if ((paper.hf_upvotes || 0) > 0)
-                signals.push({ icon: ThumbsUp, value: fmt(paper.hf_upvotes!), label: 'HF upvotes', color: 'text-orange-300', bg: 'bg-orange-500/10 border-orange-500/25' })
-              if ((paper.hn_points || 0) > 0)
-                signals.push({ icon: TrendingUp, value: fmt(paper.hn_points!), label: 'HN points', color: 'text-amber-300', bg: 'bg-amber-500/10 border-amber-500/25' })
-              if ((paper.github_stars || 0) > 0)
-                signals.push({ icon: Star, value: fmt(paper.github_stars!), label: 'GitHub stars', color: 'text-yellow-300', bg: 'bg-yellow-500/10 border-yellow-500/25' })
-              if (hIndex > 0)
-                signals.push({ icon: Crown, value: `h${hIndex}`, label: 'h-index', color: 'text-yellow-400', bg: 'bg-yellow-500/10 border-yellow-500/25' })
-            } else {
-              // No social data yet — show AI-derived scores as the signal
-              const relevance = Math.round((paper.ai_relevance_score || 0) * 100)
-              const impact = Math.round((paper.ai_impact_score || 0) * 100)
-              const qualityScore = Math.round((paper.normalized_score || 0) * 100)
-              if (relevance > 0)
-                signals.push({ icon: Zap, value: `${relevance}%`, label: 'AI relevance', color: 'text-accent-2', bg: 'bg-accent/10 border-accent/25' })
-              if (impact > 0)
-                signals.push({ icon: TrendingUp, value: `${impact}%`, label: 'AI impact', color: 'text-emerald-300', bg: 'bg-emerald-500/10 border-emerald-500/25' })
-              if (qualityScore > 0)
-                signals.push({ icon: Star, value: `${qualityScore}`, label: 'quality score', color: 'text-yellow-300', bg: 'bg-yellow-500/10 border-yellow-500/25' })
-              if (hIndex > 0)
-                signals.push({ icon: Crown, value: `h${hIndex}`, label: 'h-index', color: 'text-yellow-400', bg: 'bg-yellow-500/10 border-yellow-500/25' })
-            }
+            // HackerNews points — always visible
+            chips.push({
+              icon: TrendingUp,
+              value: fmt(paper.hn_points || 0),
+              label: 'HN points',
+              color: (paper.hn_points || 0) > 0 ? 'text-amber-300' : 'text-slate-500',
+              bg:    (paper.hn_points || 0) > 0 ? 'bg-amber-500/12 border-amber-500/30' : 'bg-white/4 border-white/10',
+              dim:   (paper.hn_points || 0) === 0,
+            })
 
-            if (!signals.length) return null
+            // Citations — always visible
+            chips.push({
+              icon: Quote,
+              value: fmt(paper.citation_count || 0),
+              label: 'citations',
+              color: (paper.citation_count || 0) > 0 ? 'text-indigo-300' : 'text-slate-500',
+              bg:    (paper.citation_count || 0) > 0 ? 'bg-indigo-500/12 border-indigo-500/30' : 'bg-white/4 border-white/10',
+              dim:   (paper.citation_count || 0) === 0,
+            })
+
+            // GitHub stars — only when non-zero
+            if ((paper.github_stars || 0) > 0)
+              chips.push({ icon: Star, value: fmt(paper.github_stars!), label: 'GitHub stars', color: 'text-yellow-300', bg: 'bg-yellow-500/12 border-yellow-500/30' })
+
+            // Author h-index — only when non-zero
+            if (hIndex > 0)
+              chips.push({ icon: Crown, value: `h${hIndex}`, label: 'h-index', color: 'text-yellow-400', bg: 'bg-yellow-500/12 border-yellow-500/30' })
+
             return (
               <div className="flex flex-wrap items-center gap-2 mb-4">
-                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-                  {hasSocial ? 'Why it matters:' : 'AI scored:'}
-                </span>
-                {signals.map(s => (
-                  <span key={s.label} className={`flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full border ${s.bg} ${s.color}`}>
-                    <s.icon size={10} />
-                    {s.value} <span className="font-normal opacity-70">{s.label}</span>
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Community signal:</span>
+                {chips.map(c => (
+                  <span
+                    key={c.label}
+                    className={`flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full border ${c.bg} ${c.color} ${c.dim ? 'opacity-40' : ''}`}
+                  >
+                    <c.icon size={10} />
+                    {c.value} <span className="font-normal opacity-70">{c.label}</span>
                   </span>
                 ))}
               </div>
@@ -291,16 +301,12 @@ export function HeroHook({ paper }: Props) {
             <ScoreRing score={score} />
           </div>
 
-          {/* Stats grid — always shows citations/views, conditionally adds HF/HN/Stars/H-Index */}
+          {/* Stats grid — HF Votes + HN Points always shown as primary social proof */}
           <div className="grid grid-cols-2 gap-2">
-            <StatBox icon={Quote}     value={fmt(paper.citation_count || 0)} label="Citations" color="text-accent-2" />
-            <StatBox icon={Eye}       value={fmt(paper.view_count || 0)}     label="Views"     color="text-cyan-400" />
-            {(paper.hf_upvotes || 0) > 0 && (
-              <StatBox icon={ThumbsUp}  value={fmt(paper.hf_upvotes!)}  label="HF Votes"  color="text-orange-400" />
-            )}
-            {(paper.hn_points || 0) > 0 && (
-              <StatBox icon={TrendingUp} value={fmt(paper.hn_points!)} label="HN Points" color="text-amber-400" />
-            )}
+            <StatBox icon={ThumbsUp}   value={fmt(paper.hf_upvotes || 0)}     label="HF Votes"  color={(paper.hf_upvotes || 0) > 0 ? 'text-orange-400' : 'text-slate-600'} />
+            <StatBox icon={TrendingUp} value={fmt(paper.hn_points || 0)}      label="HN Points" color={(paper.hn_points || 0) > 0 ? 'text-amber-400' : 'text-slate-600'} />
+            <StatBox icon={Quote}      value={fmt(paper.citation_count || 0)} label="Citations" color={(paper.citation_count || 0) > 0 ? 'text-accent-2' : 'text-slate-600'} />
+            <StatBox icon={Eye}        value={fmt(paper.view_count || 0)}     label="Views"     color="text-cyan-400" />
             {(paper.github_stars || 0) > 0 && (
               <StatBox icon={Star}  value={fmt(paper.github_stars!)} label="Stars"   color="text-yellow-400" />
             )}

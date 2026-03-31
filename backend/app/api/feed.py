@@ -369,13 +369,18 @@ async def get_dashboard(db: TursoClient = Depends(get_db)):
         hero_rows, hype_rows, grid_rows, radar_rows,
         arsenal_rows, vel_rows, theory_rows, contrarian_rows
     ) = await asyncio.gather(
-        # 1. Hero – paper with real community proof: must have HF upvotes, HN points, or citations.
-        #    Ranked by trending_score so the most-discussed paper leads; h_index_max as tiebreaker.
-        #    Rotates through top 8 qualifying papers daily so the hero changes each day.
+        # 1. Hero – must have HF upvotes OR HN points (community discussion proof).
+        #    Sorted by combined HF+HN social signal first, then citations, then overall score.
+        #    Papers discussed on both HuggingFace AND HackerNews score highest.
+        #    Rotates through top 8 qualifying papers daily.
         safe_fetch(
             f"SELECT rowid as id, * FROM papers WHERE {W} "
-            "AND (COALESCE(hf_upvotes,0) > 0 OR COALESCE(hn_points,0) > 0 OR COALESCE(citation_count,0) > 0) "
-            f"ORDER BY COALESCE(trending_score,0) DESC, COALESCE(citation_count,0) DESC, h_index_max DESC "
+            "AND (COALESCE(hf_upvotes,0) > 0 OR COALESCE(hn_points,0) > 0) "
+            "ORDER BY "
+            "  (COALESCE(hf_upvotes,0) + COALESCE(hn_points,0) + COALESCE(hn_comments,0)*0.5) DESC, "
+            "  COALESCE(citation_count,0) DESC, "
+            "  COALESCE(trending_score,0) DESC, "
+            "  normalized_score DESC "
             f"LIMIT 1 OFFSET {hero_off}", P),
         # 2. Hype Carousel – rotate social buzz papers daily
         safe_fetch(
