@@ -583,7 +583,14 @@ async def get_papers_by_type(
         order = "normalized_score DESC"
         params: list = []
     elif type == "gems":
-        where = f"{base} AND is_above_threshold = 1 AND view_count < 30"
+        # Good quality score, NOT trending, low community discovery
+        # (low views in our system AND low/no HF upvotes)
+        where = (
+            f"{base} AND is_above_threshold = 1 "
+            "AND (is_trending = 0 OR is_trending IS NULL) "
+            "AND view_count < 50 "
+            "AND (hf_upvotes IS NULL OR hf_upvotes < 10)"
+        )
         order = "normalized_score DESC"
         params = []
     elif type == "new":

@@ -26,7 +26,7 @@ const CATEGORIES = [
     emoji: '💎',
     label: 'Hidden Gems',
     hook: 'High-signal papers most have missed',
-    reason: 'High normalized score but under 30 views — strong research signal before the crowd finds it. Ranked by quality, filtered for low exposure.',
+    reason: 'High quality score, not trending, under 50 views and under 10 HF upvotes — genuinely undiscovered papers with strong signal before the crowd finds them.',
     border: 'border-purple-500/25',
     bg: 'hover:bg-purple-500/8',
     badgeBg: 'bg-purple-500/10',
