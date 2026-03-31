@@ -5,8 +5,77 @@ import { PaperCard } from '@/components/feed/PaperCard'
 import { Dashboard } from '@/components/dashboard/Dashboard'
 import { FeedBanner } from '@/components/alerts/FeedBanner'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Database, Eye, Flame, Loader2, CheckCircle, Search, X } from 'lucide-react'
+import { Database, Eye, Flame, Loader2, CheckCircle, Search, X, ArrowRight } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { feedApi } from '@/lib/api'
+
+const CATEGORIES = [
+  {
+    type: 'trending',
+    emoji: '🔥',
+    label: 'Trending Papers',
+    hook: 'Top papers the community is reading',
+    border: 'border-orange-500/25',
+    bg: 'hover:bg-orange-500/8',
+    color: 'text-orange-400',
+  },
+  {
+    type: 'gems',
+    emoji: '💎',
+    label: 'Hidden Gems',
+    hook: 'High-impact work flying under the radar',
+    border: 'border-purple-500/25',
+    bg: 'hover:bg-purple-500/8',
+    color: 'text-purple-400',
+  },
+  {
+    type: 'new',
+    emoji: '✨',
+    label: 'New Papers',
+    hook: 'Latest arXiv submissions, ranked',
+    border: 'border-cyan-500/25',
+    bg: 'hover:bg-cyan-500/8',
+    color: 'text-cyan-400',
+  },
+  {
+    type: 'rising',
+    emoji: '📈',
+    label: 'Rising Fast',
+    hook: 'Papers gaining momentum right now',
+    border: 'border-green-500/25',
+    bg: 'hover:bg-green-500/8',
+    color: 'text-green-400',
+  },
+]
+
+function CategoryAlerts() {
+  const navigate = useNavigate()
+  return (
+    <div>
+      <p className="text-[11px] font-bold text-muted uppercase tracking-widest mb-3">Explore by category</p>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {CATEGORIES.map((cat) => (
+          <motion.button
+            key={cat.type}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={() => navigate(`/papers/${cat.type}`)}
+            className={`flex flex-col items-start gap-2 p-4 rounded-xl border bg-surface/50 ${cat.border} ${cat.bg} transition-colors cursor-pointer text-left group`}
+          >
+            <div className="flex items-center justify-between w-full">
+              <span className="text-2xl">{cat.emoji}</span>
+              <ArrowRight size={13} className="text-muted group-hover:text-white transition-colors" />
+            </div>
+            <div>
+              <p className={`text-sm font-bold ${cat.color}`}>{cat.label}</p>
+              <p className="text-[11px] text-muted leading-snug mt-0.5">{cat.hook}</p>
+            </div>
+          </motion.button>
+        ))}
+      </div>
+    </div>
+  )
+}
 
 interface Stats {
   total_papers: number
@@ -221,6 +290,7 @@ export function HomePage() {
 
       {/* Main content */}
       <main className="max-w-7xl mx-auto px-4 py-8 space-y-5">
+        {!isSearching && <CategoryAlerts />}
         {!isSearching && <ResumeReading />}
 
         {isSearching ? (
