@@ -49,7 +49,7 @@ function getSpotlight(paper: DashboardPaper): { badge: string; title: string; bi
   }
 }
 
-function ScoreRing({ score }: { score: number }) {
+function ScoreRing({ score, label = 'Score' }: { score: number; label?: string }) {
   const r = 36
   const circ = 2 * Math.PI * r
   const filled = (score / 100) * circ
@@ -67,7 +67,7 @@ function ScoreRing({ score }: { score: number }) {
       </svg>
       <div className="absolute flex flex-col items-center">
         <span className="text-2xl font-black text-white leading-none">{score}</span>
-        <span className="text-[9px] text-muted font-bold uppercase tracking-widest">Score</span>
+        <span className="text-[9px] text-muted font-bold uppercase tracking-widest">{label}</span>
       </div>
     </div>
   )
@@ -96,7 +96,18 @@ export function HeroHook({ paper }: Props) {
   const { badge, title, bio } = getSpotlight(paper)
   const topAuthor = paper.authors?.[0]
   const hIndex = Math.round(paper.h_index_max || topAuthor?.h_index || 0)
-  const score = Math.round((paper.normalized_score || 0) * 100)
+
+  // Hero impact score: blends quality (normalized_score) with social momentum (HF + HN + citation velocity).
+  // Emerging papers with high community discussion score higher here than on the raw quality ring alone.
+  const hfNorm   = Math.min(1, Math.log(1 + (paper.hf_upvotes || 0))                                       / Math.log(101))
+  const hnNorm   = Math.min(1, Math.log(1 + (paper.hn_points || 0) + (paper.hn_comments || 0) * 0.5)       / Math.log(201))
+  const citVel   = Math.min(1, paper.citation_velocity || 0)
+  const social   = 0.40 * hfNorm + 0.35 * hnNorm + 0.25 * citVel
+  const hasSocialData = (paper.hf_upvotes || 0) > 0 || (paper.hn_points || 0) > 0
+  const heroScore = hasSocialData
+    ? Math.round((0.50 * (paper.normalized_score || 0) + 0.50 * social) * 100)
+    : Math.round((paper.normalized_score || 0) * 100)
+
   const editorialTag = dailyHook(EDITORIAL_TAGS)
 
   const platforms: string[] = []
@@ -298,7 +309,7 @@ export function HeroHook({ paper }: Props) {
         >
           {/* Score ring */}
           <div className="flex justify-center">
-            <ScoreRing score={score} />
+            <ScoreRing score={heroScore} label={hasSocialData ? 'Impact' : 'Score'} />
           </div>
 
           {/* Stats grid — HF Votes + HN Points always shown as primary social proof */}
