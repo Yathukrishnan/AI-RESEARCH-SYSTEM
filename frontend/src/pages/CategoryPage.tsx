@@ -8,6 +8,21 @@ import { feedApi } from '@/lib/api'
 
 type CategoryType = 'trending' | 'gems' | 'new' | 'rising' | 'all'
 
+// Force the correct badge label per category page — overrides whatever DB trend_label says
+const CATEGORY_LABEL: Partial<Record<CategoryType, string>> = {
+  trending: '🔥 Trending',
+  gems:     '💎 Hidden Gem',
+  new:      '✨ New',
+  rising:   '📈 Rising',
+}
+
+// Maps to PaperCard sectionType for correct colour theming on score bar + border
+const SECTION_TYPE: Partial<Record<CategoryType, 'trending' | 'rising' | 'hidden_gems'>> = {
+  trending: 'trending',
+  rising:   'rising',
+  gems:     'hidden_gems',
+}
+
 const META: Record<CategoryType, {
   label: string
   emoji: string
@@ -168,7 +183,14 @@ export function CategoryPage() {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.3, delay: Math.min(i * 0.04, 0.4) }}
                 >
-                  <PaperCard paper={paper} index={i} />
+                  <PaperCard
+                    paper={{
+                      ...paper,
+                      trend_label: CATEGORY_LABEL[cat] ?? paper.trend_label,
+                    }}
+                    index={i}
+                    sectionType={SECTION_TYPE[cat]}
+                  />
                 </motion.div>
               ))}
             </div>
