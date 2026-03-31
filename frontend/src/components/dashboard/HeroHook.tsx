@@ -152,33 +152,6 @@ export function HeroHook({ paper, hook }: Props) {
 
           <p className="text-xs text-slate-400 leading-relaxed mb-4 line-clamp-2">{bio}</p>
 
-          {/* Impact signals — why this paper matters */}
-          {(() => {
-            const signals: { icon: React.ElementType; value: string; label: string; color: string; bg: string }[] = []
-            if ((paper.citation_count || 0) > 0)
-              signals.push({ icon: Quote, value: fmt(paper.citation_count), label: 'citations', color: 'text-indigo-300', bg: 'bg-indigo-500/10 border-indigo-500/25' })
-            if ((paper.hf_upvotes || 0) > 0)
-              signals.push({ icon: ThumbsUp, value: fmt(paper.hf_upvotes!), label: 'HF upvotes', color: 'text-orange-300', bg: 'bg-orange-500/10 border-orange-500/25' })
-            if ((paper.hn_points || 0) > 0)
-              signals.push({ icon: TrendingUp, value: fmt(paper.hn_points!), label: 'HN points', color: 'text-amber-300', bg: 'bg-amber-500/10 border-amber-500/25' })
-            if ((paper.github_stars || 0) > 0)
-              signals.push({ icon: Star, value: fmt(paper.github_stars), label: 'GitHub stars', color: 'text-yellow-300', bg: 'bg-yellow-500/10 border-yellow-500/25' })
-            if (hIndex > 0)
-              signals.push({ icon: Crown, value: `h${hIndex}`, label: 'h-index', color: 'text-yellow-400', bg: 'bg-yellow-500/10 border-yellow-500/25' })
-            if (!signals.length) return null
-            return (
-              <div className="flex flex-wrap gap-2 mb-4">
-                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest self-center">Why it matters:</span>
-                {signals.map(s => (
-                  <span key={s.label} className={`flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full border ${s.bg} ${s.color}`}>
-                    <s.icon size={10} />
-                    {s.value} <span className="font-normal opacity-70">{s.label}</span>
-                  </span>
-                ))}
-              </div>
-            )
-          })()}
-
           {/* Authors */}
           <div className="flex items-center gap-2 flex-wrap mb-5">
             {topAuthor && (
@@ -200,7 +173,7 @@ export function HeroHook({ paper, hook }: Props) {
           </div>
 
           {/* Hook headline */}
-          <div className="mb-4">
+          <div className="mb-3">
             {paper.hook_text ? (
               <p className="text-xl sm:text-2xl font-black text-white leading-snug group-hover:text-yellow-100 transition-colors">
                 {paper.hook_text}
@@ -214,6 +187,38 @@ export function HeroHook({ paper, hook }: Props) {
               <p className="text-[11px] text-slate-600 font-mono mt-1 line-clamp-1">↳ {paper.title}</p>
             )}
           </div>
+
+          {/* Why it matters — signal chips, always shows citations */}
+          {(() => {
+            const signals: { icon: React.ElementType; value: string; label: string; color: string; bg: string; dim?: boolean }[] = []
+            signals.push({
+              icon: Quote,
+              value: fmt(paper.citation_count || 0),
+              label: 'citations',
+              color: (paper.citation_count || 0) > 0 ? 'text-indigo-300' : 'text-slate-500',
+              bg: (paper.citation_count || 0) > 0 ? 'bg-indigo-500/10 border-indigo-500/25' : 'bg-white/4 border-white/10',
+              dim: (paper.citation_count || 0) === 0,
+            })
+            if ((paper.hf_upvotes || 0) > 0)
+              signals.push({ icon: ThumbsUp, value: fmt(paper.hf_upvotes!), label: 'HF upvotes', color: 'text-orange-300', bg: 'bg-orange-500/10 border-orange-500/25' })
+            if ((paper.hn_points || 0) > 0)
+              signals.push({ icon: TrendingUp, value: fmt(paper.hn_points!), label: 'HN points', color: 'text-amber-300', bg: 'bg-amber-500/10 border-amber-500/25' })
+            if ((paper.github_stars || 0) > 0)
+              signals.push({ icon: Star, value: fmt(paper.github_stars!), label: 'GitHub stars', color: 'text-yellow-300', bg: 'bg-yellow-500/10 border-yellow-500/25' })
+            if (hIndex > 0)
+              signals.push({ icon: Crown, value: `h${hIndex}`, label: 'h-index', color: 'text-yellow-400', bg: 'bg-yellow-500/10 border-yellow-500/25' })
+            return (
+              <div className="flex flex-wrap items-center gap-2 mb-4">
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Why it matters:</span>
+                {signals.map(s => (
+                  <span key={s.label} className={`flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full border ${s.bg} ${s.color} ${s.dim ? 'opacity-50' : ''}`}>
+                    <s.icon size={10} />
+                    {s.value} <span className="font-normal opacity-70">{s.label}</span>
+                  </span>
+                ))}
+              </div>
+            )
+          })()}
 
           {/* Abstract snippet */}
           {paper.abstract && (
