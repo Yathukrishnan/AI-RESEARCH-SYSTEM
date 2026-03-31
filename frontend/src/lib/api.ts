@@ -106,6 +106,8 @@ export const adminApi = {
   triggerSocialSignals: (batch = 200) => api.post(`/admin/trigger-social-signals?batch=${batch}`),
   getApiHealth: () => api.get('/admin/api-health'),
   getServiceConfig: () => api.get('/admin/service-config'),
+  triggerLandingContent: (batch = 100, force = false) =>
+    api.post(`/admin/trigger-landing-content?batch=${batch}&force=${force}`),
 }
 
 export const dashboardApi = {
@@ -114,6 +116,12 @@ export const dashboardApi = {
 
 export const hooksApi = {
   getToday: () => api.get('/hooks/today'),
+}
+
+export const landingApi = {
+  getLanding: () => api.get('/landing'),
+  getTopic: (topic: string, page = 0) => api.get(`/landing/topic/${encodeURIComponent(topic)}?page=${page}`),
+  getReport: (paperId: number) => api.get(`/report/${paperId}`),
 }
 
 export default api

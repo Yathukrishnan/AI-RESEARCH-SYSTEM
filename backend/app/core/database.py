@@ -239,6 +239,11 @@ ENSURE_COLUMNS = [
     ("papers", "gem_score",         "REAL",    "0.0"),
     ("papers", "platform_score",    "REAL",    "0.0"),
     ("papers", "social_checked_at", "TEXT",    "NULL"),
+    # Public landing page AI fields
+    ("papers", "ai_topic_category", "TEXT",    "NULL"),
+    ("papers", "ai_lay_summary",    "TEXT",    "NULL"),
+    ("papers", "ai_why_important",  "TEXT",    "NULL"),
+    ("papers", "ai_key_findings",   "TEXT",    "NULL"),
 ]
 
 

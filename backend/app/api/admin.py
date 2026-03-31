@@ -300,6 +300,24 @@ async def trigger_enrich(batch: int = 50, background_tasks: BackgroundTasks = No
     return {"status": "started", "batch_size": batch}
 
 
+@router.post("/trigger-landing-content")
+async def trigger_landing_content(
+    batch: int = 100,
+    force: bool = False,
+    background_tasks: BackgroundTasks = None,
+    _: dict = Depends(require_admin),
+):
+    """
+    Generate public landing page AI content (lay summaries, topic categories,
+    key findings, why-important text) for papers that don't have it yet.
+    Set force=true to regenerate all papers (backfill).
+    """
+    from app.tasks.paper_tasks import generate_landing_content
+    batch = min(max(batch, 1), 500)
+    background_tasks.add_task(generate_landing_content, batch, force)
+    return {"status": "started", "batch_size": batch, "force": force}
+
+
 @router.get("/daily-fetch")
 async def daily_fetch_status(db: TursoClient = Depends(get_db), _: dict = Depends(require_admin)):
     """Return today's fetch log and the list of papers fetched today."""

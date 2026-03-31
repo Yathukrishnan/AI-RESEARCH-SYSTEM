@@ -210,3 +210,90 @@ export interface DailyHook {
   title: string
   paper_id: number
 }
+
+// ── Public Landing Page Types ────────────────────────────────────────────────
+
+export interface LandingPaper {
+  id: number
+  arxiv_id?: string
+  title: string
+  abstract?: string
+  authors: { name: string; affiliation?: string; h_index?: number }[]
+  categories: string[]
+  primary_category?: string
+  published_at?: string
+  pdf_url?: string
+  github_url?: string
+  github_stars: number
+  citation_count: number
+  normalized_score: number
+  current_score: number
+  trend_label?: string
+  ai_topic_tags: string[]
+  ai_summary?: string
+  hook_text?: string
+  hf_upvotes?: number
+  hn_points?: number
+  hn_comments?: number
+  citation_velocity?: number
+  trending_score?: number
+  view_count: number
+  save_count: number
+  // Public landing fields
+  ai_topic_category?: string
+  ai_lay_summary?: string
+  ai_why_important?: string
+  ai_key_findings?: string[]
+}
+
+export interface TopicMeta {
+  emoji: string
+  label: string
+  tagline: string
+  color: string
+}
+
+export interface LandingCategory {
+  topic: string
+  emoji: string
+  label: string
+  tagline: string
+  color: string
+  paper_count: number
+  papers: LandingPaper[]
+}
+
+export interface LandingData {
+  hero: LandingPaper | null
+  breaking: LandingPaper[]
+  categories: LandingCategory[]
+  topic_meta: Record<string, TopicMeta>
+}
+
+export interface SocialProof {
+  hf_upvotes: number
+  hn_points: number
+  hn_comments: number
+  citation_count: number
+  github_stars: number
+  github_url?: string
+  has_strong_signal: boolean
+  community_score: number
+}
+
+export interface ReportData {
+  paper: LandingPaper
+  social_proof: SocialProof
+  trend_reason: string
+  related_papers: LandingPaper[]
+  topic_meta: TopicMeta | null
+}
+
+export interface TopicPageData {
+  papers: LandingPaper[]
+  total: number
+  page: number
+  has_more: boolean
+  topic: string
+  meta: TopicMeta | null
+}

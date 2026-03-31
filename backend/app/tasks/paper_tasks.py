@@ -759,3 +759,103 @@ async def process_single_paper(arxiv_id: str):
 
     await enrich_pending_papers(batch_size=1)
     await score_existing_papers()
+
+
+async def generate_landing_content(batch_size: int = 100, force: bool = False) -> int:
+    """
+    Generate public-facing landing content for non-technical readers:
+    - ai_topic_category: one of 10 human topics (Language, Vision, Health…)
+    - ai_lay_summary: 3-4 plain-English sentences anyone can understand
+    - ai_why_important: 1-2 sentences explaining WHY this paper is featured
+    - ai_key_findings: JSON array of 3-4 specific bullet-point findings
+
+    Called by admin trigger or scheduled task.
+    Only processes papers that have ai_summary or abstract available.
+    With force=True, regenerates all papers (useful for backfill).
+    """
+    if force:
+        condition = "is_deleted = 0 AND is_duplicate = 0"
+        logger.info("Landing content: force=True, regenerating all papers…")
+    else:
+        condition = (
+            "is_deleted = 0 AND is_duplicate = 0 "
+            "AND (ai_topic_category IS NULL OR ai_lay_summary IS NULL)"
+        )
+
+    rows = await turso_db.fetchall(
+        f"SELECT rowid as id, title, abstract, ai_summary, ai_topic_tags, "
+        f"categories, trend_label, hf_upvotes, hn_points, hn_comments, "
+        f"citation_count, github_stars "
+        f"FROM papers WHERE {condition} "
+        f"AND (abstract IS NOT NULL OR ai_summary IS NOT NULL) "
+        f"ORDER BY normalized_score DESC LIMIT ?",
+        [batch_size]
+    )
+
+    if not rows:
+        logger.info("Landing content: no papers to process")
+        return 0
+
+    logger.info(f"Landing content: generating for {len(rows)} papers…")
+    ai_svc = AIValidationService(settings.OPENROUTER_API_KEY)
+    semaphore = asyncio.Semaphore(4)
+    processed = 0
+
+    async def _generate_one(p: dict):
+        nonlocal processed
+        async with semaphore:
+            try:
+                title = p.get("title", "")
+                abstract = p.get("abstract", "")
+                ai_summary = p.get("ai_summary", "")
+                categories = json.loads(p.get("categories") or "[]")
+                trend_label_val = p.get("trend_label", "")
+                hf_upvotes = int(p.get("hf_upvotes") or 0)
+                hn_points = int(p.get("hn_points") or 0)
+                hn_comments = int(p.get("hn_comments") or 0)
+                citation_count = int(p.get("citation_count") or 0)
+                github_stars = int(p.get("github_stars") or 0)
+
+                # Run topic classification, lay summary, and key findings in parallel
+                topic, lay_summary, key_findings = await asyncio.gather(
+                    ai_svc.generate_topic_category(title, abstract, categories),
+                    ai_svc.generate_lay_summary(title, abstract, ai_summary),
+                    ai_svc.generate_key_findings(title, abstract, ai_summary),
+                    return_exceptions=True,
+                )
+
+                topic = topic if isinstance(topic, str) else "General"
+                lay_summary = lay_summary if isinstance(lay_summary, str) else ""
+                key_findings = key_findings if isinstance(key_findings, list) else []
+
+                # Why important uses topic + social signals
+                why_important = await ai_svc.generate_why_important(
+                    title=title,
+                    trend_label=trend_label_val,
+                    hf_upvotes=hf_upvotes,
+                    hn_points=hn_points,
+                    hn_comments=hn_comments,
+                    citation_count=citation_count,
+                    github_stars=github_stars,
+                    topic_category=topic,
+                )
+
+                await turso_db.execute(
+                    "UPDATE papers SET ai_topic_category=?, ai_lay_summary=?, "
+                    "ai_why_important=?, ai_key_findings=? WHERE rowid=?",
+                    [
+                        topic,
+                        lay_summary,
+                        why_important,
+                        json.dumps(key_findings),
+                        p["id"]
+                    ]
+                )
+                processed += 1
+                logger.debug(f"Landing content OK: paper {p['id']} → topic={topic}")
+            except Exception as e:
+                logger.error(f"Landing content error paper {p.get('id')}: {e}")
+
+    await asyncio.gather(*[_generate_one(p) for p in rows], return_exceptions=True)
+    logger.info(f"Landing content: done — {processed}/{len(rows)} papers processed")
+    return processed

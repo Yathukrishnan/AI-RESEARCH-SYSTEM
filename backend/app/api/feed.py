@@ -670,3 +670,309 @@ async def get_stats(db: TursoClient = Depends(get_db)):
         "current_week": current_week,
         "analysis_complete": analysis_status == "1",
     }
+
+
+# ── Public Landing API ────────────────────────────────────────────────────────
+
+# All 10 topic definitions (icon, tagline, arXiv hints)
+_TOPIC_META = {
+    "Language": {
+        "emoji": "💬",
+        "label": "Language & AI",
+        "tagline": "How machines are learning to talk, read, reason — and change how we work",
+        "color": "blue",
+    },
+    "Vision": {
+        "emoji": "👁️",
+        "label": "Vision & Creativity",
+        "tagline": "Teaching computers to see, understand images, and create stunning visuals",
+        "color": "pink",
+    },
+    "Robots": {
+        "emoji": "🤖",
+        "label": "Robots & Automation",
+        "tagline": "The machines that move, build, and act in the physical world",
+        "color": "orange",
+    },
+    "Health": {
+        "emoji": "🧬",
+        "label": "Medicine & Health",
+        "tagline": "AI finding cures, predicting illness, and accelerating drug discovery",
+        "color": "green",
+    },
+    "Safety": {
+        "emoji": "🛡️",
+        "label": "AI Safety & Trust",
+        "tagline": "Making AI systems that humans can actually trust and control",
+        "color": "red",
+    },
+    "Science": {
+        "emoji": "🔬",
+        "label": "Science & Discovery",
+        "tagline": "AI accelerating breakthroughs across physics, chemistry, and beyond",
+        "color": "cyan",
+    },
+    "Efficiency": {
+        "emoji": "⚡",
+        "label": "Speed & Efficiency",
+        "tagline": "Making AI smaller, faster, and cheaper — so it runs anywhere",
+        "color": "yellow",
+    },
+    "Business": {
+        "emoji": "💼",
+        "label": "Business & Economy",
+        "tagline": "AI reshaping how companies operate, compete, and serve customers",
+        "color": "purple",
+    },
+    "Climate": {
+        "emoji": "🌍",
+        "label": "Climate & Energy",
+        "tagline": "Using AI to understand and fight climate change before time runs out",
+        "color": "emerald",
+    },
+    "General": {
+        "emoji": "🧠",
+        "label": "Big Ideas",
+        "tagline": "Research that doesn't fit a single box — but still matters enormously",
+        "color": "slate",
+    },
+}
+
+_LANDING_SELECT = (
+    "rowid as id, arxiv_id, title, abstract, authors, categories, primary_category, "
+    "published_at, pdf_url, github_url, github_stars, citation_count, h_index_max, "
+    "normalized_score, current_score, trend_label, ai_topic_tags, ai_summary, hook_text, "
+    "hf_upvotes, hn_points, hn_comments, citation_velocity, trending_score, "
+    "view_count, save_count, ai_topic_category, ai_lay_summary, ai_why_important, ai_key_findings"
+)
+
+
+def _parse_landing(p: dict) -> dict:
+    """Parse a landing paper row — includes new AI fields."""
+    for f in ("authors", "categories", "ai_topic_tags"):
+        v = p.get(f)
+        if isinstance(v, str):
+            try:
+                p[f] = json.loads(v)
+            except Exception:
+                p[f] = []
+        elif v is None:
+            p[f] = []
+    # Parse key findings JSON array
+    kf = p.get("ai_key_findings")
+    if isinstance(kf, str):
+        try:
+            p["ai_key_findings"] = json.loads(kf)
+        except Exception:
+            p["ai_key_findings"] = []
+    elif not isinstance(kf, list):
+        p["ai_key_findings"] = []
+    return p
+
+
+@router.get("/landing")
+async def get_landing(db: TursoClient = Depends(get_db)):
+    """
+    Public landing page data — news magazine style, for non-technical readers.
+    Returns:
+      - hero: single featured paper (highest social proof + lay summary)
+      - breaking: top 3 papers with strongest HF+HN community signal
+      - categories: papers grouped by human topic (Language, Vision, Health…)
+        Each category has metadata + top 4 papers with hooks
+    """
+    cache_key = f"landing:{date.today().isoformat()}"
+    cached = await cache_get(cache_key)
+    if cached:
+        return cached
+
+    # ── Hero: best social proof paper with lay summary ────────────────────────
+    hero_row = await db.fetchone(
+        f"SELECT {_LANDING_SELECT} FROM papers "
+        "WHERE is_deleted=0 AND is_duplicate=0 "
+        "AND (COALESCE(hf_upvotes,0) > 0 OR COALESCE(hn_points,0) > 0) "
+        "AND (ai_lay_summary IS NOT NULL AND ai_lay_summary != '') "
+        "ORDER BY (COALESCE(trending_score,0)*0.6 + COALESCE(normalized_score,0)*0.4) DESC "
+        "LIMIT 1"
+    )
+    # Fallback: best-scored paper even without lay summary
+    if not hero_row:
+        hero_row = await db.fetchone(
+            f"SELECT {_LANDING_SELECT} FROM papers "
+            "WHERE is_deleted=0 AND is_duplicate=0 "
+            "ORDER BY normalized_score DESC LIMIT 1"
+        )
+    hero = _parse_landing(dict(hero_row)) if hero_row else None
+
+    # ── Breaking: top 3 community-signal papers ───────────────────────────────
+    breaking_rows = await db.fetchall(
+        f"SELECT {_LANDING_SELECT} FROM papers "
+        "WHERE is_deleted=0 AND is_duplicate=0 "
+        "AND (COALESCE(hf_upvotes,0) + COALESCE(hn_points,0)) > 0 "
+        "ORDER BY (COALESCE(hf_upvotes,0)*0.5 + COALESCE(hn_points,0)*0.5 + "
+        "          COALESCE(trending_score,0)*100) DESC "
+        "LIMIT 6"
+    )
+    # Exclude hero from breaking
+    hero_id = hero["id"] if hero else None
+    breaking = [
+        _parse_landing(dict(r)) for r in breaking_rows
+        if r["id"] != hero_id
+    ][:3]
+
+    # ── Categories: group papers by topic, top 4 per category ─────────────────
+    topic_rows = await db.fetchall(
+        f"SELECT {_LANDING_SELECT} FROM papers "
+        "WHERE is_deleted=0 AND is_duplicate=0 "
+        "AND ai_topic_category IS NOT NULL "
+        "AND (hook_text IS NOT NULL OR ai_summary IS NOT NULL OR abstract IS NOT NULL) "
+        "ORDER BY normalized_score DESC "
+        "LIMIT 400"
+    )
+
+    # Group by topic
+    from collections import defaultdict
+    topic_buckets: dict = defaultdict(list)
+    for r in topic_rows:
+        if r["id"] == hero_id:
+            continue
+        topic = r.get("ai_topic_category") or "General"
+        if len(topic_buckets[topic]) < 4:
+            topic_buckets[topic].append(_parse_landing(dict(r)))
+
+    # Build categories response — only include topics with ≥1 paper
+    categories = []
+    for topic, meta in _TOPIC_META.items():
+        papers_in_topic = topic_buckets.get(topic, [])
+        if not papers_in_topic:
+            continue
+        categories.append({
+            "topic": topic,
+            **meta,
+            "paper_count": len(papers_in_topic),
+            "papers": papers_in_topic,
+        })
+
+    result = {
+        "hero": hero,
+        "breaking": breaking,
+        "categories": categories,
+        "topic_meta": _TOPIC_META,
+    }
+    await cache_set(cache_key, result, ttl=1800)
+    return result
+
+
+@router.get("/landing/topic/{topic}")
+async def get_topic_papers(
+    topic: str,
+    page: int = Query(0, ge=0),
+    db: TursoClient = Depends(get_db),
+):
+    """
+    All papers for a given topic category — paginated, for the TopicPage drill-down.
+    sorted by: trending papers first, then by normalized_score.
+    """
+    if topic not in _TOPIC_META:
+        return {"papers": [], "total": 0, "topic": topic, "meta": None}
+
+    limit = 24
+    offset = page * limit
+
+    total = await db.fetchone(
+        "SELECT COUNT(*) as n FROM papers WHERE is_deleted=0 AND is_duplicate=0 "
+        "AND ai_topic_category=?",
+        [topic]
+    )
+    total_count = total["n"] if total else 0
+
+    rows = await db.fetchall(
+        f"SELECT {_LANDING_SELECT} FROM papers "
+        "WHERE is_deleted=0 AND is_duplicate=0 AND ai_topic_category=? "
+        "ORDER BY COALESCE(is_trending,0) DESC, normalized_score DESC "
+        "LIMIT ? OFFSET ?",
+        [topic, limit, offset]
+    )
+
+    papers = [_parse_landing(dict(r)) for r in rows]
+    return {
+        "papers": papers,
+        "total": total_count,
+        "page": page,
+        "has_more": (offset + len(papers)) < total_count,
+        "topic": topic,
+        "meta": _TOPIC_META.get(topic),
+    }
+
+
+@router.get("/report/{paper_id}")
+async def get_report(paper_id: int, db: TursoClient = Depends(get_db)):
+    """
+    Full report page data for a single paper — the digest layer between
+    the landing page and the raw arXiv paper.
+    Includes: lay summary, key findings, why important, social proof, related papers.
+    """
+    row = await db.fetchone(
+        f"SELECT {_LANDING_SELECT}, "
+        "hf_upvotes, hn_points, hn_comments, citation_velocity, star_velocity, "
+        "rising_score, gem_score, platform_score, score_history "
+        "FROM papers WHERE rowid=? AND is_deleted=0",
+        [paper_id]
+    )
+    if not row:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Paper not found")
+
+    paper = _parse_landing(dict(row))
+
+    # Social proof block — structured for easy display
+    hf = int(paper.get("hf_upvotes") or 0)
+    hn = int(paper.get("hn_points") or 0)
+    hn_c = int(paper.get("hn_comments") or 0)
+    cit = int(paper.get("citation_count") or 0)
+    stars = int(paper.get("github_stars") or 0)
+
+    social_proof = {
+        "hf_upvotes": hf,
+        "hn_points": hn,
+        "hn_comments": hn_c,
+        "citation_count": cit,
+        "github_stars": stars,
+        "github_url": paper.get("github_url"),
+        "has_strong_signal": (hf > 0 or hn > 0),
+        "community_score": round(
+            min(1.0, (hf / 100) * 0.4 + (hn / 200) * 0.35 + min(1.0, cit / 50) * 0.25), 3
+        ),
+    }
+
+    # Trend explanation — plain English
+    trend = paper.get("trend_label", "") or ""
+    if "🔥" in trend or "Trending" in trend:
+        trend_reason = "This paper is currently one of the most-discussed AI research papers online."
+    elif "💎" in trend or "Hidden Gem" in trend:
+        trend_reason = "This is a hidden gem — technically strong but not yet widely known. Insiders are paying attention."
+    elif "📈" in trend or "Rising" in trend:
+        trend_reason = "This paper's popularity is climbing fast. The community is waking up to its importance."
+    elif "✨" in trend or "New" in trend:
+        trend_reason = "Just published — fresh off the research press and already attracting early interest."
+    else:
+        trend_reason = "Curated by our scoring system as a high-quality research paper worth reading."
+
+    # Related papers — same topic category, similar score range
+    topic = paper.get("ai_topic_category") or "General"
+    related_rows = await db.fetchall(
+        f"SELECT {_LANDING_SELECT} FROM papers "
+        "WHERE is_deleted=0 AND is_duplicate=0 AND rowid != ? "
+        "AND ai_topic_category = ? "
+        "ORDER BY ABS(normalized_score - ?) ASC, normalized_score DESC "
+        "LIMIT 3",
+        [paper_id, topic, float(paper.get("normalized_score") or 0)]
+    )
+    related = [_parse_landing(dict(r)) for r in related_rows]
+
+    return {
+        "paper": paper,
+        "social_proof": social_proof,
+        "trend_reason": trend_reason,
+        "related_papers": related,
+        "topic_meta": _TOPIC_META.get(topic),
+    }

@@ -485,6 +485,296 @@ Respond with ONLY the subheading."""
 
         return ""
 
+    # ── Public Landing Page Methods ────────────────────────────────────────────
+
+    # Maps arXiv category prefixes → human topic
+    _TOPIC_MAP = {
+        "cs.CL": "Language",  "cs.AI": "Language",
+        "cs.CV": "Vision",
+        "cs.RO": "Robots",
+        "q-bio": "Health",    "eess.SP": "Health",
+        "cs.CR": "Safety",    "cs.LG": "Language",
+        "physics": "Science", "astro-ph": "Science",
+        "math": "Science",    "cond-mat": "Science",
+        "cs.AR": "Efficiency","cs.PF": "Efficiency",
+        "econ": "Business",   "cs.IR": "Business",
+        "cs.SY": "Robots",
+    }
+    _TOPIC_LABELS = [
+        "Language", "Vision", "Robots", "Health",
+        "Safety", "Science", "Efficiency", "Business", "Climate", "General"
+    ]
+
+    async def generate_topic_category(
+        self, title: str, abstract: str, arxiv_categories: list
+    ) -> str:
+        """
+        Map a paper to one of 10 human-readable topic buckets.
+        Tries a fast heuristic first (arXiv prefix), falls back to AI classification.
+        """
+        # Fast heuristic: check arXiv category prefixes
+        for cat in (arxiv_categories or []):
+            for prefix, topic in self._TOPIC_MAP.items():
+                if cat.startswith(prefix):
+                    return topic
+
+        # Keyword heuristics before hitting the API
+        text = f"{title} {abstract}".lower()
+        if any(w in text for w in ["climate", "carbon", "emission", "sustainability", "renewable"]):
+            return "Climate"
+        if any(w in text for w in ["drug", "clinical", "medical", "patient", "genomic", "protein", "disease"]):
+            return "Health"
+        if any(w in text for w in ["robot", "manipulation", "locomotion", "autonomous vehicle", "drone"]):
+            return "Robots"
+        if any(w in text for w in ["safety", "alignment", "hallucination", "bias", "fairness", "ethics"]):
+            return "Safety"
+        if any(w in text for w in ["quantization", "pruning", "distillation", "compression", "inference speed", "edge deploy"]):
+            return "Efficiency"
+        if any(w in text for w in ["finance", "stock", "market", "forecast", "recommendation", "e-commerce"]):
+            return "Business"
+
+        if not self._api_key:
+            return "General"
+
+        prompt = f"""Classify this AI research paper into exactly ONE of these topics:
+Language, Vision, Robots, Health, Safety, Science, Efficiency, Business, Climate, General
+
+Title: {title[:200]}
+Abstract: {abstract[:400]}
+
+Topic definitions:
+- Language: NLP, LLMs, text generation, translation, chatbots, tokenization
+- Vision: images, video, diffusion, object detection, segmentation, visual models
+- Robots: robotics, manipulation, locomotion, autonomous systems, drones
+- Health: medicine, drug discovery, genomics, clinical AI, protein folding
+- Safety: alignment, AI safety, bias, fairness, interpretability, adversarial
+- Science: physics, chemistry, climate, astronomy, materials science, math
+- Efficiency: model compression, quantization, inference speed, edge AI, memory
+- Business: finance, recommendation systems, forecasting, marketing AI
+- Climate: climate change, carbon, energy, sustainability, weather
+- General: anything that doesn't fit the above
+
+Respond with ONLY the single topic word (e.g. "Language"). Nothing else."""
+
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.post(
+                    f"{self.base_url}/chat/completions",
+                    headers={"Authorization": f"Bearer {self._api_key}", "Content-Type": "application/json"},
+                    json={
+                        "model": self.model,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "max_tokens": 10,
+                        "temperature": 0.0,
+                    }
+                )
+                if resp.status_code == 200:
+                    word = resp.json()["choices"][0]["message"]["content"].strip().strip('"\'').strip()
+                    if word in self._TOPIC_LABELS:
+                        return word
+        except Exception as e:
+            logger.warning(f"Topic category error: {e}")
+
+        return "General"
+
+    async def generate_lay_summary(
+        self, title: str, abstract: str, ai_summary: str = ""
+    ) -> str:
+        """
+        Generate a 3–4 sentence plain-English summary for non-technical readers.
+        No jargon, no acronyms — written so any curious adult can understand.
+        """
+        if not self._api_key:
+            # Simple fallback: return first 2 sentences of abstract
+            sentences = (abstract or "").split(". ")
+            return ". ".join(sentences[:2]).strip() + "." if sentences else ""
+
+        source = ai_summary or abstract or title
+
+        prompt = f"""You are explaining a research paper to a curious, intelligent adult who has no technical background — like a smart friend who reads The Atlantic, not Nature.
+
+Paper title: {title[:220]}
+Technical content: {source[:600]}
+
+Write 3–4 SHORT sentences that explain:
+1. What problem were they trying to solve? (Use an analogy if it helps)
+2. What did they build or discover?
+3. Why does this matter in the real world?
+
+STRICT RULES:
+- NO technical jargon, NO acronyms (spell out if needed)
+- NO passive voice — say "researchers built" not "a system was developed"
+- Use concrete analogies: "like a spell-checker for AI" not "a verification framework"
+- Start with the problem or situation, not "Researchers at..."
+- Each sentence max 25 words
+- Make it feel like explaining to a friend, not writing a press release
+
+Respond with ONLY the 3–4 sentences, no labels, no bullet points."""
+
+        try:
+            async with httpx.AsyncClient(timeout=20) as client:
+                resp = await client.post(
+                    f"{self.base_url}/chat/completions",
+                    headers={"Authorization": f"Bearer {self._api_key}", "Content-Type": "application/json"},
+                    json={
+                        "model": self.model,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "max_tokens": 200,
+                        "temperature": 0.5,
+                    }
+                )
+                if resp.status_code == 200:
+                    text = resp.json()["choices"][0]["message"]["content"].strip()
+                    if text and len(text) > 30:
+                        return text[:600]
+        except Exception as e:
+            logger.warning(f"Lay summary error: {e}")
+
+        sentences = (abstract or "").split(". ")
+        return ". ".join(sentences[:2]).strip() + "." if sentences else ""
+
+    async def generate_why_important(
+        self,
+        title: str,
+        trend_label: str,
+        hf_upvotes: int,
+        hn_points: int,
+        hn_comments: int,
+        citation_count: int,
+        github_stars: int,
+        topic_category: str,
+    ) -> str:
+        """
+        Generate a 1–2 sentence plain-English explanation of WHY this paper
+        is featured — community proof + real-world significance.
+        Written so a non-technical person understands why it's a big deal.
+        """
+        # Build community signal context
+        signals = []
+        if hf_upvotes > 0:
+            signals.append(f"{hf_upvotes:,} AI practitioners bookmarked it on HuggingFace")
+        if hn_points > 0:
+            signals.append(f"{hn_points} points on Hacker News" + (f" with {hn_comments} comments" if hn_comments > 0 else ""))
+        if github_stars > 0:
+            signals.append(f"{github_stars:,} developers starred the code on GitHub")
+        if citation_count > 0:
+            signals.append(f"{citation_count} other research papers cite this work")
+
+        trend_context = ""
+        if trend_label:
+            label_lower = trend_label.lower()
+            if "trending" in label_lower or "🔥" in trend_label:
+                trend_context = "It is currently the most-discussed AI paper online."
+            elif "gem" in label_lower or "💎" in label_lower:
+                trend_context = "It hasn't gone viral yet, but insiders are paying close attention."
+            elif "rising" in label_lower or "📈" in label_lower:
+                trend_context = "Its popularity is climbing fast — the community is waking up to it."
+            elif "new" in label_lower or "✨" in label_lower:
+                trend_context = "It was just published and is already attracting attention."
+
+        signal_text = " and ".join(signals[:2]) if signals else "the research community is discussing it"
+
+        if not self._api_key:
+            base = f"This {topic_category.lower()} research is featured because {signal_text}."
+            return f"{base} {trend_context}".strip()
+
+        prompt = f"""Write 1–2 sentences explaining WHY this paper is being featured today, for a general audience.
+
+Paper: {title[:200]}
+Category: {topic_category}
+Status: {trend_label or 'Featured'}
+Community proof: {signal_text}
+{f'Context: {trend_context}' if trend_context else ''}
+
+RULES:
+- Sound like a trusted friend explaining why this news matters
+- Reference the actual community numbers if provided
+- Explain WHY those numbers matter (e.g. "when thousands of engineers bookmark something, it usually means it's about to change how software gets built")
+- No jargon, no hype words like "revolutionary" or "groundbreaking"
+- 1–2 sentences max, each under 30 words
+- Start with "This is featured because..." or a variation
+
+Respond with ONLY the 1–2 sentences."""
+
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.post(
+                    f"{self.base_url}/chat/completions",
+                    headers={"Authorization": f"Bearer {self._api_key}", "Content-Type": "application/json"},
+                    json={
+                        "model": self.model,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "max_tokens": 100,
+                        "temperature": 0.4,
+                    }
+                )
+                if resp.status_code == 200:
+                    text = resp.json()["choices"][0]["message"]["content"].strip()
+                    if text and len(text) > 20:
+                        return text[:300]
+        except Exception as e:
+            logger.warning(f"Why important error: {e}")
+
+        base = f"This {topic_category.lower()} research is featured because {signal_text}."
+        return f"{base} {trend_context}".strip()
+
+    async def generate_key_findings(
+        self, title: str, abstract: str, ai_summary: str = ""
+    ) -> list:
+        """
+        Generate 3–4 plain-English bullet points — key findings non-technical readers can understand.
+        Returns a list of strings.
+        """
+        if not self._api_key:
+            return []
+
+        source = ai_summary or abstract or ""
+        if not source:
+            return []
+
+        prompt = f"""Extract 3–4 key findings from this research paper, written for a general audience.
+
+Title: {title[:200]}
+Content: {source[:600]}
+
+Write 3–4 one-sentence findings. Each should:
+- Start with a verb: "Achieves", "Reduces", "Proves", "Enables", "Outperforms", "Shows", "Cuts", "Builds"
+- Include a specific number or comparison if the paper mentions one
+- Be understandable without technical background
+- Be under 20 words each
+
+Examples of good findings:
+- "Reduces the time to train an AI model from weeks to hours on a single laptop"
+- "Outperforms Google's best model while using 10x less computing power"
+- "Enables smartphones to run AI assistants without an internet connection"
+
+Respond with ONLY a JSON array of strings: ["finding 1", "finding 2", "finding 3"]
+No markdown, no extra text."""
+
+        try:
+            async with httpx.AsyncClient(timeout=20) as client:
+                resp = await client.post(
+                    f"{self.base_url}/chat/completions",
+                    headers={"Authorization": f"Bearer {self._api_key}", "Content-Type": "application/json"},
+                    json={
+                        "model": self.model,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "max_tokens": 250,
+                        "temperature": 0.3,
+                    }
+                )
+                if resp.status_code == 200:
+                    raw = resp.json()["choices"][0]["message"]["content"].strip()
+                    raw = re.sub(r'```json\s*', '', raw)
+                    raw = re.sub(r'```\s*', '', raw).strip()
+                    findings = json.loads(raw)
+                    if isinstance(findings, list):
+                        return [str(f)[:150] for f in findings[:4] if f]
+        except Exception as e:
+            logger.warning(f"Key findings error: {e}")
+
+        return []
+
     def _make_fallback_hook(self, title: str, abstract: str) -> str:
         """Short fallback hook from title (truncated to feel punchy)."""
         # Trim title to ~70 chars at a word boundary

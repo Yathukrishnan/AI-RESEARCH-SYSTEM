@@ -77,11 +77,11 @@ export function Navbar() {
                 {results.slice(0, 6).map((p) => (
                   <Link
                     key={p.id}
-                    to={`/paper/${p.id}`}
+                    to={`/report/${p.id}`}
                     onClick={clearSearch}
                     className="block px-4 py-3 hover:bg-surface-2 border-b border-accent/10 last:border-0"
                   >
-                    <p className="text-sm text-white font-medium line-clamp-1">{p.title}</p>
+                    <p className="text-sm text-white font-medium line-clamp-1">{p.hook_text || p.title}</p>
                     <p className="text-xs text-muted mt-0.5">{p.primary_category} · {p.authors[0]?.name}</p>
                   </Link>
                 ))}
@@ -92,6 +92,23 @@ export function Navbar() {
 
         {/* Right actions */}
         <div className="flex items-center gap-2 ml-auto">
+          {/* Dashboard link — for power users navigating from landing */}
+          {location.pathname === '/' && (
+            <Link
+              to="/dashboard"
+              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-surface border border-accent/20 rounded-lg text-xs text-muted hover:text-white hover:border-accent/40 transition-all"
+            >
+              Researcher View
+            </Link>
+          )}
+          {location.pathname === '/dashboard' && (
+            <Link
+              to="/"
+              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-surface border border-accent/20 rounded-lg text-xs text-muted hover:text-white hover:border-accent/40 transition-all"
+            >
+              Explore →
+            </Link>
+          )}
           {isAuthenticated && role === 'admin' && (
             <Link
               to="/admin"
