@@ -459,6 +459,31 @@ class EnrichmentService:
 
             return result_map, paper_author_map, author_name_map, h_map
 
+    async def get_github_stars_from_url(self, github_url: str) -> Optional[Dict]:
+        """
+        Fetch current star + fork counts from GitHub REST API given an existing URL.
+        Used during social signal refresh to update star counts without re-querying PwC.
+        Returns {github_stars, github_forks} or None on failure.
+        """
+        try:
+            parts = github_url.rstrip("/").split("github.com/")
+            if len(parts) != 2:
+                return None
+            repo_path = parts[1].split("/tree/")[0].split("/blob/")[0]
+            async with httpx.AsyncClient(headers=self.gh_headers, timeout=10) as gh:
+                resp = await gh.get(f"{self.github_url}/repos/{repo_path}")
+                if resp.status_code == 200:
+                    data = resp.json()
+                    return {
+                        "github_stars": int(data.get("stargazers_count") or 0),
+                        "github_forks": int(data.get("forks_count") or 0),
+                    }
+                elif resp.status_code == 403:
+                    logger.debug(f"GitHub rate limit hit for {repo_path}")
+        except Exception as e:
+            logger.debug(f"GitHub stars refresh error for {github_url}: {e}")
+        return None
+
     async def get_github_data(self, arxiv_id: str, title: str) -> Optional[Dict]:
         """Single PwC lookup (used for manual paper adds)."""
         await asyncio.sleep(0.5)

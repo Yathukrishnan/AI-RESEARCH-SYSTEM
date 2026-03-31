@@ -181,7 +181,8 @@ async def enrich_pending_papers(batch_size: int = 500):
     # Old papers (>7 days) first — citation_count affects their score.
     # New papers (≤7 days) last — they use keyword/recency/github, not citations yet.
     rows = await turso_db.fetchall(
-        "SELECT rowid as id, arxiv_id, title, COALESCE(published_at, published_date) as published_at "
+        "SELECT rowid as id, arxiv_id, title, COALESCE(published_at, published_date) as published_at, "
+        "COALESCE(github_stars, 0) as github_stars "
         "FROM papers WHERE is_enriched = 0 AND is_deleted = 0 "
         "ORDER BY "
         "  CASE WHEN date(COALESCE(published_at, published_date, '2020-01-01')) <= date('now', '-7 days') "
@@ -249,13 +250,20 @@ async def enrich_pending_papers(batch_size: int = 500):
             github_stars = int(gh.get("github_stars") or 0)
             github_forks = int(gh.get("github_forks") or 0)
 
+            # Compute star velocity: relative growth since last enrichment
+            old_stars = int(p.get("github_stars") or 0)
+            if old_stars > 0 and github_stars > old_stars:
+                star_velocity = min(1.0, (github_stars - old_stars) / old_stars)
+            else:
+                star_velocity = 0.0
+
             try:
                 await turso_db.execute(
                     "UPDATE papers SET citation_count=?, influential_citation_count=?, "
                     "h_index_max=?, github_url=?, "
-                    "github_stars=?, github_forks=?, is_enriched=1, last_enriched_at=? WHERE rowid=?",
+                    "github_stars=?, github_forks=?, star_velocity=?, is_enriched=1, last_enriched_at=? WHERE rowid=?",
                     [citation_count, influential_citation_count, h_index,
-                     github_url, github_stars, github_forks, now, p["id"]]
+                     github_url, github_stars, github_forks, star_velocity, now, p["id"]]
                 )
                 enriched_ids.append(p["id"])
                 logger.debug(f"Enriched {aid}: citations={citation_count}, stars={github_stars}")
@@ -278,11 +286,18 @@ async def enrich_pending_papers(batch_size: int = 500):
             github_stars = int(gh.get("github_stars") or 0)
             github_forks = int(gh.get("github_forks") or 0)
 
+            # Compute star velocity for new papers (relative growth since last check)
+            old_stars = int(p.get("github_stars") or 0)
+            if old_stars > 0 and github_stars > old_stars:
+                star_velocity = min(1.0, (github_stars - old_stars) / old_stars)
+            else:
+                star_velocity = 0.0
+
             try:
                 await turso_db.execute(
-                    "UPDATE papers SET github_url=?, github_stars=?, github_forks=?, "
+                    "UPDATE papers SET github_url=?, github_stars=?, github_forks=?, star_velocity=?, "
                     "last_enriched_at=? WHERE rowid=?",
-                    [github_url, github_stars, github_forks, now, p["id"]]
+                    [github_url, github_stars, github_forks, star_velocity, now, p["id"]]
                 )
                 if github_stars > 0 or github_url:
                     logger.debug(f"New paper {p['arxiv_id']}: GitHub stars={github_stars}, SS deferred")
@@ -555,7 +570,7 @@ async def refresh_social_signals(batch_size: int = 200) -> int:
     """
     rows = await turso_db.fetchall(
         "SELECT rowid as id, arxiv_id, title, normalized_score, "
-        "view_count, save_count, click_count, citation_count, github_stars, published_at "
+        "view_count, save_count, click_count, citation_count, github_stars, github_url, star_velocity, published_at "
         "FROM papers "
         "WHERE is_deleted = 0 AND is_duplicate = 0 AND is_above_threshold = 1 "
         "AND (social_checked_at IS NULL OR social_checked_at < datetime('now', '-6 hours')) "
@@ -586,15 +601,24 @@ async def refresh_social_signals(batch_size: int = 200) -> int:
         async with sem:
             await asyncio.sleep(0.1)
             try:
-                hf_data, hn_data, oa_data = await asyncio.gather(
+                # Fetch HF, HN, OpenAlex in parallel; refresh GitHub stars if URL known
+                async def _noop():
+                    return None
+                gh_coro = (
+                    enricher.get_github_stars_from_url(p["github_url"])
+                    if p.get("github_url") else _noop()
+                )
+                hf_data, hn_data, oa_data, gh_data = await asyncio.gather(
                     enricher.get_huggingface_data(p["arxiv_id"]),
                     enricher.get_hackernews_data(p["arxiv_id"], p["title"]),
                     enricher.get_openalex_data(p["arxiv_id"]),
+                    gh_coro,
                     return_exceptions=True,
                 )
                 hf = hf_data if isinstance(hf_data, dict) else {"hf_upvotes": 0}
                 hn = hn_data if isinstance(hn_data, dict) else {"hn_points": 0, "hn_comments": 0}
                 oa = oa_data if isinstance(oa_data, dict) else {"citation_velocity": 0.0, "openalex_citation_count": 0}
+                gh = gh_data if isinstance(gh_data, dict) else None
 
                 enriched = dict(p)
                 enriched.update(hf)
@@ -608,7 +632,18 @@ async def refresh_social_signals(batch_size: int = 200) -> int:
                 )
                 enriched["citation_count"] = best_citations
 
-                return {
+                # Update GitHub stars and compute star velocity
+                old_stars = int(p.get("github_stars") or 0)
+                new_stars = int(gh.get("github_stars") or 0) if gh else old_stars
+                new_forks = int(gh.get("github_forks") or 0) if gh else None
+                if old_stars > 0 and new_stars > old_stars:
+                    star_velocity = min(1.0, (new_stars - old_stars) / old_stars)
+                else:
+                    star_velocity = float(p.get("star_velocity") or 0.0)  # preserve existing
+                enriched["github_stars"] = new_stars
+                enriched["star_velocity"] = star_velocity
+
+                result = {
                     "id": p["id"],
                     "hf_upvotes": hf["hf_upvotes"],
                     "hn_points": hn["hn_points"],
@@ -618,7 +653,13 @@ async def refresh_social_signals(batch_size: int = 200) -> int:
                     "rising_score": compute_rising_score(enriched),
                     "gem_score": compute_gem_score(enriched),
                     "platform_score": compute_platform_score(enriched),
+                    "star_velocity": star_velocity,
                 }
+                if gh:
+                    result["github_stars"] = new_stars
+                    if new_forks is not None:
+                        result["github_forks"] = new_forks
+                return result
             except Exception as e:
                 logger.debug(f"Social signal error {p.get('arxiv_id')}: {e}")
                 return None
@@ -626,18 +667,31 @@ async def refresh_social_signals(batch_size: int = 200) -> int:
     raw_results = await asyncio.gather(*[_fetch_one(p) for p in rows], return_exceptions=True)
     updates = [r for r in raw_results if isinstance(r, dict) and r]
 
-    # Batch DB updates
-    stmts = [
-        (
-            "UPDATE papers SET hf_upvotes=?, hn_points=?, hn_comments=?, citation_velocity=?, "
-            "trending_score=?, rising_score=?, gem_score=?, platform_score=?, social_checked_at=? "
-            "WHERE rowid=?",
-            [u["hf_upvotes"], u["hn_points"], u["hn_comments"], u["citation_velocity"],
-             u["trending_score"], u["rising_score"], u["gem_score"], u["platform_score"],
-             now, u["id"]],
-        )
-        for u in updates
-    ]
+    # Batch DB updates — include github_stars/forks/star_velocity when refreshed
+    stmts = []
+    for u in updates:
+        if "github_stars" in u:
+            stmt = (
+                "UPDATE papers SET hf_upvotes=?, hn_points=?, hn_comments=?, citation_velocity=?, "
+                "trending_score=?, rising_score=?, gem_score=?, platform_score=?, "
+                "github_stars=?, github_forks=?, star_velocity=?, social_checked_at=? "
+                "WHERE rowid=?",
+                [u["hf_upvotes"], u["hn_points"], u["hn_comments"], u["citation_velocity"],
+                 u["trending_score"], u["rising_score"], u["gem_score"], u["platform_score"],
+                 u["github_stars"], u.get("github_forks"), u["star_velocity"],
+                 now, u["id"]],
+            )
+        else:
+            stmt = (
+                "UPDATE papers SET hf_upvotes=?, hn_points=?, hn_comments=?, citation_velocity=?, "
+                "trending_score=?, rising_score=?, gem_score=?, platform_score=?, "
+                "star_velocity=?, social_checked_at=? "
+                "WHERE rowid=?",
+                [u["hf_upvotes"], u["hn_points"], u["hn_comments"], u["citation_velocity"],
+                 u["trending_score"], u["rising_score"], u["gem_score"], u["platform_score"],
+                 u["star_velocity"], now, u["id"]],
+            )
+        stmts.append(stmt)
     CHUNK = 100
     for i in range(0, len(stmts), CHUNK):
         try:
