@@ -14,36 +14,44 @@ const CATEGORIES = [
     type: 'trending',
     emoji: '🔥',
     label: 'Trending Papers',
-    hook: 'Top papers the community is reading',
+    hook: 'Top papers the field is reading right now',
+    reason: 'Ranked by citation velocity, HF upvotes, HN points & GitHub stars — the most-discussed papers across AI communities this week.',
     border: 'border-orange-500/25',
     bg: 'hover:bg-orange-500/8',
+    badgeBg: 'bg-orange-500/10',
     color: 'text-orange-400',
   },
   {
     type: 'gems',
     emoji: '💎',
     label: 'Hidden Gems',
-    hook: 'High-impact work flying under the radar',
+    hook: 'High-signal papers most have missed',
+    reason: 'High normalized score but under 30 views — strong research signal before the crowd finds it. Ranked by quality, filtered for low exposure.',
     border: 'border-purple-500/25',
     bg: 'hover:bg-purple-500/8',
+    badgeBg: 'bg-purple-500/10',
     color: 'text-purple-400',
   },
   {
     type: 'new',
     emoji: '✨',
     label: 'New Papers',
-    hook: 'Latest arXiv submissions, ranked',
+    hook: 'Latest arXiv submissions, freshly ranked',
+    reason: 'Papers added to the feed in the last 7 days, scored by our AI pipeline — citation count, author h-index, topic relevance, and community signals.',
     border: 'border-cyan-500/25',
     bg: 'hover:bg-cyan-500/8',
+    badgeBg: 'bg-cyan-500/10',
     color: 'text-cyan-400',
   },
   {
     type: 'rising',
     emoji: '📈',
     label: 'Rising Fast',
-    hook: 'Papers gaining momentum right now',
+    hook: 'Papers accelerating in the rankings',
+    reason: 'Re-scored in the last 3 days with increasing momentum — these papers are gaining traction faster than their peers. Catch them before they peak.',
     border: 'border-green-500/25',
     bg: 'hover:bg-green-500/8',
+    badgeBg: 'bg-green-500/10',
     color: 'text-green-400',
   },
 ]
@@ -53,23 +61,26 @@ function CategoryAlerts() {
   return (
     <div>
       <p className="text-[11px] font-bold text-muted uppercase tracking-widest mb-3">Explore by category</p>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
         {CATEGORIES.map((cat) => (
           <motion.button
             key={cat.type}
-            whileHover={{ scale: 1.02 }}
+            whileHover={{ scale: 1.015 }}
             whileTap={{ scale: 0.98 }}
             onClick={() => navigate(`/papers/${cat.type}`)}
-            className={`flex flex-col items-start gap-2 p-4 rounded-xl border bg-surface/50 ${cat.border} ${cat.bg} transition-colors cursor-pointer text-left group`}
+            className={`flex flex-col items-start gap-3 p-4 rounded-xl border bg-surface/50 ${cat.border} ${cat.bg} transition-colors cursor-pointer text-left group`}
           >
+            {/* Header */}
             <div className="flex items-center justify-between w-full">
-              <span className="text-2xl">{cat.emoji}</span>
-              <ArrowRight size={13} className="text-muted group-hover:text-white transition-colors" />
+              <span className={`flex items-center gap-1.5 text-xs font-bold px-2 py-1 rounded-full ${cat.badgeBg} ${cat.color}`}>
+                <span className="text-base leading-none">{cat.emoji}</span> {cat.label}
+              </span>
+              <ArrowRight size={13} className="text-muted group-hover:text-white transition-colors shrink-0" />
             </div>
-            <div>
-              <p className={`text-sm font-bold ${cat.color}`}>{cat.label}</p>
-              <p className="text-[11px] text-muted leading-snug mt-0.5">{cat.hook}</p>
-            </div>
+            {/* Hook */}
+            <p className="text-sm font-bold text-white leading-snug">{cat.hook}</p>
+            {/* Reason — why this category exists */}
+            <p className="text-[11px] text-slate-400 leading-relaxed">{cat.reason}</p>
           </motion.button>
         ))}
       </div>
