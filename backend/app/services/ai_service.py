@@ -294,6 +294,96 @@ Respond with ONLY the headline, nothing else. No quotes."""
         },
     }
 
+    async def generate_hero_author_hook(
+        self,
+        author_name: str,
+        h_index: float,
+        title: str,
+        abstract: str,
+        hf_upvotes: int = 0,
+        hn_points: int = 0,
+        citation_count: int = 0,
+    ) -> str:
+        """
+        Generate a 1–2 sentence author-centric bio hook for the Hero section.
+        Emphasises the researcher's track record, community proof (HF/HN), and
+        why this specific paper demands attention right now.
+        Falls back to empty string so the frontend uses getSpotlight() static copy.
+        """
+        if not self._api_key:
+            return ""
+
+        # Build social proof context for the prompt
+        social_lines = []
+        if hf_upvotes > 0:
+            social_lines.append(f"{hf_upvotes} upvotes on HuggingFace Papers")
+        if hn_points > 0:
+            social_lines.append(f"{hn_points} points on Hacker News")
+        if citation_count > 0:
+            social_lines.append(f"{citation_count} citations")
+        social_proof = " · ".join(social_lines) if social_lines else "emerging community interest"
+
+        h_context = ""
+        if h_index >= 70:
+            h_context = f"h-index {int(h_index)} — one of the most cited researchers in the world"
+        elif h_index >= 40:
+            h_context = f"h-index {int(h_index)} — a top-tier authority in AI research"
+        elif h_index >= 20:
+            h_context = f"h-index {int(h_index)} — a rising influential voice in the field"
+        elif h_index > 0:
+            h_context = f"h-index {int(h_index)}"
+
+        prompt = f"""You are writing a 1–2 sentence author spotlight for a featured paper in an AI research dashboard.
+
+AUTHOR: {author_name or "the lead researcher"}
+{f"AUTHOR CREDENTIALS: {h_context}" if h_context else ""}
+PAPER TITLE: {title[:200]}
+ABSTRACT: {abstract[:400]}
+COMMUNITY SIGNAL: {social_proof}
+
+GOAL: Tell the reader WHY this author's work demands attention right now.
+Blend their research track record with the paper's finding and the community's reaction.
+
+STYLE RULES:
+- 1–2 sentences only, 20–40 words total
+- Mention the author by name
+- Reference their h-index or past influence if known
+- Weave in the community signal naturally (upvotes, discussion)
+- End with a forward-looking implication — what this means for the field
+- No "This paper", no "Researchers found", no academic jargon
+- Sound like an insider briefing a senior practitioner
+
+GOOD EXAMPLES:
+- "When Yoshua Bengio's lab moves on causal representation, practitioners rewrite their roadmaps — 340 HuggingFace upvotes suggest the field already agrees."
+- "h-index 67, and now a quiet pre-print on inference efficiency that 800 Hacker News readers flagged as this month's must-read."
+- "Ilya Sutskever's last paper before departing OpenAI — 500 upvotes and counting — reframes alignment as a systems engineering problem, not a philosophy debate."
+
+Respond with ONLY the 1–2 sentence hook, nothing else."""
+
+        try:
+            async with httpx.AsyncClient(timeout=20) as client:
+                resp = await client.post(
+                    f"{self.base_url}/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {self._api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": self.model,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "max_tokens": 100,
+                        "temperature": 0.75,
+                    }
+                )
+                if resp.status_code == 200:
+                    text = resp.json()["choices"][0]["message"]["content"].strip().strip('"\'')
+                    if text and len(text) > 20:
+                        return text[:400]
+        except Exception as e:
+            logger.warning(f"Hero author hook generation error: {e}")
+
+        return ""
+
     async def generate_section_hook(self, section: str, papers: list) -> str:
         """
         Generate a punchy section subheading using psychological copywriting directives.

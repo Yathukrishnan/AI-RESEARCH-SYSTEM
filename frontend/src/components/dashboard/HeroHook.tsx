@@ -17,7 +17,7 @@ const EDITORIAL_TAGS = [
   "EDITOR'S CHOICE",
 ]
 
-interface Props { paper: DashboardPaper }
+interface Props { paper: DashboardPaper; authorHook?: string }
 
 function getSpotlight(paper: DashboardPaper): { badge: string; title: string; bio: string } {
   const hIndex = Math.round(paper.h_index_max || 0)
@@ -90,10 +90,11 @@ function fmt(n: number): string {
   return n.toLocaleString()
 }
 
-export function HeroHook({ paper }: Props) {
+export function HeroHook({ paper, authorHook }: Props) {
   const navigate = useNavigate()
   const [saved, setSaved] = useState(isSaved(paper.id))
-  const { badge, title, bio } = getSpotlight(paper)
+  const { badge, title, bio: fallbackBio } = getSpotlight(paper)
+  const bio = (authorHook && authorHook.trim()) ? authorHook : fallbackBio
   const topAuthor = paper.authors?.[0]
   const hIndex = Math.round(paper.h_index_max || topAuthor?.h_index || 0)
 
