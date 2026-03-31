@@ -44,6 +44,8 @@ class Settings(BaseSettings):
     ARXIV_API_URL: str = "http://export.arxiv.org/api/query"
     SEMANTIC_SCHOLAR_API_URL: str = "https://api.semanticscholar.org/graph/v1"
     PAPERS_WITH_CODE_API_URL: str = "https://paperswithcode.com/api/v1"
+    GITHUB_API_URL: str = "https://api.github.com"
+    GITHUB_API_TOKEN: str = ""   # optional — raises rate limit from 60/h to 5000/h
     HUGGINGFACE_API_URL: str = "https://huggingface.co/api/papers"
     HACKERNEWS_API_URL: str = "https://hn.algolia.com/api/v1"
     OPENALEX_API_URL: str = "https://api.openalex.org"

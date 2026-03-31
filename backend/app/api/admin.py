@@ -440,6 +440,7 @@ async def api_health(db: TursoClient = Depends(get_db), _: dict = Depends(requir
         "ArXiv":              "http://export.arxiv.org/api/query?search_query=ti:transformer&max_results=1",
         "Semantic Scholar":   "https://api.semanticscholar.org/graph/v1/paper/649def34f8be52c8b66281af98ae884c09aef38b?fields=title",
         "Papers with Code":   "https://paperswithcode.com/api/v1/papers/?limit=1",
+        "GitHub API":         "https://api.github.com/repos/huggingface/transformers",
         "HuggingFace Papers": "https://huggingface.co/api/papers/2303.08774",
         "HackerNews Algolia": "https://hn.algolia.com/api/v1/search?query=arxiv&tags=story&hitsPerPage=1",
         "OpenAlex":           "https://api.openalex.org/works/arxiv:2303.08774?select=id",

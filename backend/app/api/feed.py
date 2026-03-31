@@ -369,10 +369,10 @@ async def get_dashboard(db: TursoClient = Depends(get_db)):
         hero_rows, hype_rows, grid_rows, radar_rows,
         arsenal_rows, vel_rows, theory_rows, contrarian_rows
     ) = await asyncio.gather(
-        # 1. Hero – rotate through top trending papers daily
+        # 1. Hero – rotate through top trending papers daily (paper quality first, author prestige as tiebreaker)
         safe_fetch(
             f"SELECT rowid as id, * FROM papers WHERE {W} AND is_trending = 1 "
-            f"ORDER BY h_index_max DESC, normalized_score DESC LIMIT 1 OFFSET {hero_off}", P),
+            f"ORDER BY normalized_score DESC, h_index_max DESC LIMIT 1 OFFSET {hero_off}", P),
         # 2. Hype Carousel – rotate social buzz papers daily
         safe_fetch(
             f"SELECT rowid as id, * FROM papers WHERE {W} "

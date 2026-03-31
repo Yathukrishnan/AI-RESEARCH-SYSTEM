@@ -194,7 +194,12 @@ async def enrich_pending_papers(batch_size: int = 500):
         logger.info("Enrich: no pending papers")
         return
 
-    enricher = EnrichmentService(settings.SEMANTIC_SCHOLAR_API_URL, settings.PAPERS_WITH_CODE_API_URL)
+    enricher = EnrichmentService(
+        settings.SEMANTIC_SCHOLAR_API_URL,
+        settings.PAPERS_WITH_CODE_API_URL,
+        github_token=settings.GITHUB_API_TOKEN,
+        github_api_url=settings.GITHUB_API_URL,
+    )
     now = datetime.now(timezone.utc).isoformat()
     enriched_ids = []
 
@@ -562,7 +567,12 @@ async def refresh_social_signals(batch_size: int = 200) -> int:
         return 0
 
     logger.info(f"Social signals: refreshing {len(rows)} papers…")
-    enricher = EnrichmentService(settings.SEMANTIC_SCHOLAR_API_URL, settings.PAPERS_WITH_CODE_API_URL)
+    enricher = EnrichmentService(
+        settings.SEMANTIC_SCHOLAR_API_URL,
+        settings.PAPERS_WITH_CODE_API_URL,
+        github_token=settings.GITHUB_API_TOKEN,
+        github_api_url=settings.GITHUB_API_URL,
+    )
     from app.services.enrichment_service import SOCIAL_CONCURRENCY
     sem = asyncio.Semaphore(SOCIAL_CONCURRENCY)
     now = datetime.now(timezone.utc).isoformat()

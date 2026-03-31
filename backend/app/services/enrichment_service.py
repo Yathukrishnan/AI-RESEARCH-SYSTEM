@@ -29,10 +29,21 @@ SOCIAL_CONCURRENCY = 3
 
 
 class EnrichmentService:
-    def __init__(self, semantic_scholar_url: str, papers_with_code_url: str):
-        self.ss_url  = semantic_scholar_url
-        self.pwc_url = papers_with_code_url
-        self.headers = {"User-Agent": "AI-Research-Intelligence/1.0"}
+    def __init__(
+        self,
+        semantic_scholar_url: str,
+        papers_with_code_url: str,
+        github_token: str = "",
+        github_api_url: str = "https://api.github.com",
+    ):
+        self.ss_url     = semantic_scholar_url
+        self.pwc_url    = papers_with_code_url
+        self.github_url = github_api_url
+        self.headers    = {"User-Agent": "AI-Research-Intelligence/1.0"}
+        # GitHub API headers — with token: 5000 req/h, without: 60 req/h
+        self.gh_headers = {"User-Agent": "AI-Research-Intelligence/1.0", "Accept": "application/vnd.github+json"}
+        if github_token:
+            self.gh_headers["Authorization"] = f"Bearer {github_token}"
 
     # ── Semantic Scholar batch ─────────────────────────────────────────────
 
@@ -171,17 +182,27 @@ class EnrichmentService:
         }
 
     async def _fetch_github(self, arxiv_id: str, title: str) -> Optional[Dict]:
-        """Single Papers-with-Code lookup (no retry — caller handles failures gracefully)."""
+        """
+        1. Papers With Code → arXiv ID → GitHub URL (URL discovery)
+        2. GitHub REST API → accurate real-time star + fork count
+        Falls back to PwC star count if GitHub API call fails.
+        """
+        # Strip version suffix (e.g. "2303.08774v2" → "2303.08774") — PwC uses base IDs
+        clean_id = arxiv_id.split("v")[0] if "v" in arxiv_id else arxiv_id
+
+        github_url: Optional[str] = None
+        pwc_stars: int = 0
+        pwc_forks: int = 0
+
         async with httpx.AsyncClient(headers=self.headers, timeout=12) as client:
             try:
                 resp = await client.get(
                     f"{self.pwc_url}/papers/",
-                    params={"arxiv_id": arxiv_id},
+                    params={"arxiv_id": clean_id},
                 )
                 if resp.status_code != 200:
                     return None
 
-                # PwC returns {"count": N, "results": [...]} — extract the list
                 body = resp.json()
                 results = (body.get("results") if isinstance(body, dict) else body) or []
                 if not results:
@@ -189,32 +210,55 @@ class EnrichmentService:
 
                 paper_data = results[0]
 
-                # Official repo
+                # Try official repo first (has URL but stars may be stale/missing)
                 if paper_data.get("official") and paper_data["official"].get("url"):
-                    return {
-                        "github_url": paper_data["official"]["url"],
-                        "github_stars": int(paper_data["official"].get("stars") or 0),
-                        "github_forks": 0,
-                    }
+                    github_url  = paper_data["official"]["url"]
+                    pwc_stars   = int(paper_data["official"].get("stars") or 0)
 
-                # Fallback: repos endpoint — also returns {"count": N, "results": [...]}
-                repos_resp = await client.get(
-                    f"{self.pwc_url}/papers/{paper_data.get('id', '')}/repositories/",
-                    timeout=10,
-                )
-                if repos_resp.status_code == 200:
-                    repos_body = repos_resp.json()
-                    repos = (repos_body.get("results") if isinstance(repos_body, dict) else repos_body) or []
-                    if repos:
-                        top = max(repos, key=lambda r: r.get("stars", 0) if isinstance(r, dict) else 0)
-                        return {
-                            "github_url": top.get("url", ""),
-                            "github_stars": int(top.get("stars") or 0),
-                            "github_forks": int(top.get("forks") or 0),
-                        }
+                # If no official, try repositories endpoint for top-starred repo
+                if not github_url:
+                    paper_id = paper_data.get("id", "")
+                    if paper_id:
+                        repos_resp = await client.get(
+                            f"{self.pwc_url}/papers/{paper_id}/repositories/",
+                            timeout=10,
+                        )
+                        if repos_resp.status_code == 200:
+                            repos_body = repos_resp.json()
+                            repos = (repos_body.get("results") if isinstance(repos_body, dict) else repos_body) or []
+                            if repos:
+                                top = max(repos, key=lambda r: r.get("stars", 0) if isinstance(r, dict) else 0)
+                                github_url = top.get("url", "")
+                                pwc_stars  = int(top.get("stars") or 0)
+                                pwc_forks  = int(top.get("forks") or 0)
+
             except Exception as e:
                 logger.debug(f"PwC fetch error {arxiv_id}: {e}")
-        return None
+                return None
+
+        if not github_url:
+            return None
+
+        # ── GitHub REST API — get accurate real-time star count ────────────────
+        # PwC's cached counts can be weeks out of date; GitHub API is live.
+        stars, forks = pwc_stars, pwc_forks
+        try:
+            # Extract "{owner}/{repo}" from the GitHub URL
+            parts = github_url.rstrip("/").split("github.com/")
+            if len(parts) == 2:
+                repo_path = parts[1].split("/tree/")[0].split("/blob/")[0]  # strip branch paths
+                async with httpx.AsyncClient(headers=self.gh_headers, timeout=10) as gh:
+                    gh_resp = await gh.get(f"{self.github_url}/repos/{repo_path}")
+                    if gh_resp.status_code == 200:
+                        gh_data = gh_resp.json()
+                        stars = gh_data.get("stargazers_count", pwc_stars)
+                        forks = gh_data.get("forks_count", pwc_forks)
+                    elif gh_resp.status_code == 403:
+                        logger.debug(f"GitHub rate limit hit for {repo_path} — using PwC stars")
+        except Exception as e:
+            logger.debug(f"GitHub API error for {github_url}: {e}")
+
+        return {"github_url": github_url, "github_stars": stars, "github_forks": forks}
 
     # ── Legacy single-paper method (kept for manual/single-paper use) ──────
 
