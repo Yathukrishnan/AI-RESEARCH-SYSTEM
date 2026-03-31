@@ -30,7 +30,7 @@ const META: Record<CategoryType, {
     label: 'Hidden Gems',
     emoji: '💎',
     icon: Gem,
-    desc: 'High-impact papers that haven't gone viral yet. Strong signal, low noise.',
+    desc: "High-impact papers that haven't gone viral yet. Strong signal, low noise.",
     iconColor: 'text-purple-400',
     border: 'border-purple-500/30',
     bg: 'bg-purple-500/5',

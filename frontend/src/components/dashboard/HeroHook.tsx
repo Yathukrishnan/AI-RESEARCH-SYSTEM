@@ -1,11 +1,21 @@
 import { motion } from 'framer-motion'
-import { Github, Bookmark, ExternalLink, Quote, Star, Eye, Crown } from 'lucide-react'
+import { Github, Bookmark, ExternalLink, Quote, Star, Eye, Crown, ThumbsUp, TrendingUp, Zap } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useState } from 'react'
 import { DashboardPaper } from '@/lib/types'
 import { feedApi } from '@/lib/api'
-import { isSaved, savePaper, unsavePaper } from '@/lib/utils'
+import { isSaved, savePaper, unsavePaper, dailyHook } from '@/lib/utils'
 import toast from 'react-hot-toast'
+
+const EDITORIAL_TAGS = [
+  "TODAY'S PICK",
+  "FEATURED RESEARCH",
+  "MUST READ",
+  "BREAKTHROUGH",
+  "COMMUNITY TOP PICK",
+  "WEEK'S BEST",
+  "EDITOR'S CHOICE",
+]
 
 interface Props { paper: DashboardPaper; hook?: string }
 
@@ -27,7 +37,7 @@ function getSpotlight(paper: DashboardPaper): { badge: string; title: string; bi
     title: 'The Crowd Pick',
     bio: `The Hugging Face community has pushed this paper to the top with ${paper.hf_upvotes} upvotes. Practitioner signal at its strongest.`,
   }
-  if (paper.is_trending) return {
+  if ((paper.trending_score || 0) > 0) return {
     badge: 'TRENDING · COMMUNITY BUZZ',
     title: 'The Breakout',
     bio: `This paper is generating real buzz across AI communities right now — one of the fastest rising papers in the feed this week.`,
@@ -88,6 +98,7 @@ export function HeroHook({ paper, hook }: Props) {
   const topAuthor = paper.authors?.[0]
   const hIndex = Math.round(paper.h_index_max || topAuthor?.h_index || 0)
   const score = Math.round((paper.normalized_score || 0) * 100)
+  const editorialTag = dailyHook(EDITORIAL_TAGS)
 
   const platforms: string[] = []
   if ((paper.hf_upvotes || 0) > 0) platforms.push('Hugging Face')
@@ -125,9 +136,12 @@ export function HeroHook({ paper, hook }: Props) {
       <div className="relative flex flex-col lg:flex-row gap-0">
         {/* ── Left: main content ── */}
         <div className="flex-1 px-6 py-6 sm:px-8 sm:py-7 min-w-0">
-          {/* Spotlight label */}
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-[10px] font-bold text-yellow-400/80 tracking-widest uppercase">
+          {/* Editorial tag + spotlight label */}
+          <div className="flex items-center gap-2 mb-2 flex-wrap">
+            <span className="flex items-center gap-1 text-[10px] font-black px-2.5 py-1 rounded-full bg-yellow-400/15 border border-yellow-400/40 text-yellow-300 tracking-widest uppercase animate-pulse">
+              <Zap size={9} className="shrink-0" /> {editorialTag}
+            </span>
+            <span className="text-[10px] font-semibold text-yellow-400/50 tracking-widest uppercase">
               {badge}
             </span>
           </div>
@@ -229,32 +243,22 @@ export function HeroHook({ paper, hook }: Props) {
             <ScoreRing score={score} />
           </div>
 
-          {/* 2×2 stats */}
+          {/* Stats grid — always shows citations/views, conditionally adds HF/HN/Stars/H-Index */}
           <div className="grid grid-cols-2 gap-2">
-            <StatBox
-              icon={Quote}
-              value={fmt(paper.citation_count || 0)}
-              label="Citations"
-              color="text-accent-2"
-            />
-            <StatBox
-              icon={Eye}
-              value={fmt(paper.view_count || 0)}
-              label="Views"
-              color="text-cyan-400"
-            />
-            <StatBox
-              icon={Star}
-              value={fmt(paper.github_stars || 0)}
-              label="Stars"
-              color="text-yellow-400"
-            />
-            <StatBox
-              icon={Crown}
-              value={hIndex || '—'}
-              label="H-Index"
-              color="text-yellow-400"
-            />
+            <StatBox icon={Quote}     value={fmt(paper.citation_count || 0)} label="Citations" color="text-accent-2" />
+            <StatBox icon={Eye}       value={fmt(paper.view_count || 0)}     label="Views"     color="text-cyan-400" />
+            {(paper.hf_upvotes || 0) > 0 && (
+              <StatBox icon={ThumbsUp}  value={fmt(paper.hf_upvotes!)}  label="HF Votes"  color="text-orange-400" />
+            )}
+            {(paper.hn_points || 0) > 0 && (
+              <StatBox icon={TrendingUp} value={fmt(paper.hn_points!)} label="HN Points" color="text-amber-400" />
+            )}
+            {(paper.github_stars || 0) > 0 && (
+              <StatBox icon={Star}  value={fmt(paper.github_stars!)} label="Stars"   color="text-yellow-400" />
+            )}
+            {hIndex > 0 && (
+              <StatBox icon={Crown} value={hIndex}                   label="H-Index" color="text-yellow-400" />
+            )}
           </div>
 
           {/* Trending on */}
