@@ -333,32 +333,66 @@ Respond with ONLY the headline, nothing else. No quotes."""
         elif h_index > 0:
             h_context = f"h-index {int(h_index)}"
 
-        prompt = f"""You are writing a 1–2 sentence author spotlight for a featured paper in an AI research dashboard.
+        # Author credibility tier — used inside the prompt
+        if h_index >= 70:
+            author_tier = f"one of the most cited AI researchers alive (h-index {int(h_index)})"
+            urgency     = "When researchers at this level publish, the entire field adjusts."
+        elif h_index >= 40:
+            author_tier = f"a top-tier authority in AI/ML (h-index {int(h_index)})"
+            urgency     = "Their track record means this pre-print will shape lab roadmaps before the ink dries."
+        elif h_index >= 20:
+            author_tier = f"a respected voice in the research community (h-index {int(h_index)})"
+            urgency     = "A researcher with real standing just made a bold move — the community is already reacting."
+        elif h_index > 0:
+            author_tier = f"an emerging researcher (h-index {int(h_index)})"
+            urgency     = "Their results are turning heads despite coming from outside the big labs."
+        else:
+            author_tier = "a researcher the community is paying attention to right now"
+            urgency     = "The work is speaking louder than the name — community reaction says it all."
 
-AUTHOR: {author_name or "the lead researcher"}
-{f"AUTHOR CREDENTIALS: {h_context}" if h_context else ""}
-PAPER TITLE: {title[:200]}
-ABSTRACT: {abstract[:400]}
-COMMUNITY SIGNAL: {social_proof}
+        prompt = f"""You are a sharp AI research editor writing the FEATURED PAPER spotlight for today's dashboard.
 
-GOAL: Tell the reader WHY this author's work demands attention right now.
-Blend their research track record with the paper's finding and the community's reaction.
+Your job: write exactly 2 punchy sentences that make a senior ML practitioner stop scrolling and read this paper NOW.
 
-STYLE RULES:
-- 1–2 sentences only, 20–40 words total
-- Mention the author by name
-- Reference their h-index or past influence if known
-- Weave in the community signal naturally (upvotes, discussion)
-- End with a forward-looking implication — what this means for the field
-- No "This paper", no "Researchers found", no academic jargon
-- Sound like an insider briefing a senior practitioner
+━━━ PAPER DATA ━━━
+Author:           {author_name or "Unknown"}
+Author standing:  {author_tier}
+Why urgency:      {urgency}
+Paper title:      {title[:220]}
+Key finding:      {abstract[:450]}
+Community proof:  {social_proof}
 
-GOOD EXAMPLES:
-- "When Yoshua Bengio's lab moves on causal representation, practitioners rewrite their roadmaps — 340 HuggingFace upvotes suggest the field already agrees."
-- "h-index 67, and now a quiet pre-print on inference efficiency that 800 Hacker News readers flagged as this month's must-read."
-- "Ilya Sutskever's last paper before departing OpenAI — 500 upvotes and counting — reframes alignment as a systems engineering problem, not a philosophy debate."
+━━━ YOUR VOICE ━━━
+You are an insider — a well-connected researcher who reads every important pre-print.
+You are NOT a journalist. You are NOT a PR writer.
+You speak in sharp, confident half-sentences. You name-drop. You imply stakes.
 
-Respond with ONLY the 1–2 sentence hook, nothing else."""
+━━━ SENTENCE 1 — THE AUTHOR FRAME ━━━
+Open with the author by name. State their credibility in one brutal fact (h-index, lab, past breakthrough).
+Then pivot immediately to what they just did.
+
+━━━ SENTENCE 2 — THE STAKES ━━━
+Name the specific finding or technique from the abstract. End with what this BREAKS or ENABLES in the field.
+Weave in the community signal ({social_proof}) if it strengthens the point.
+
+━━━ STRICT RULES ━━━
+- Exactly 2 sentences. Hard limit.
+- 35–55 words total across both sentences.
+- Never start with "This paper", "The paper", "Researchers", or "A new study".
+- No hedging — no "might", "could", "may suggest".
+- No em-dash overuse — max one per sentence.
+- Mention the author name in sentence 1.
+- The second sentence must contain a specific technical term from the abstract.
+
+━━━ STRONG EXAMPLES (match this energy) ━━━
+"Andrej Karpathy hasn't published in two years — this pre-print on tokenizer-free LLMs just broke that silence with 1,200 HuggingFace upvotes in 48 hours. The architecture bypasses BPE entirely, cutting inference latency by 34% — and it runs on consumer GPUs."
+
+"Yann LeCun, h-index 130, just quietly dropped a 12-page proof that transformer attention is provably inefficient beyond 8k context. With 890 Hacker News points and counting, this isn't a fringe take — it's the theoretical foundation the next architecture cycle will be built on."
+
+"Jeff Dean's team published on sparse mixture-of-experts routing at 3 AM — 600 upvotes before the US woke up. The new gating mechanism cuts active parameter count by 60% without touching accuracy, which effectively makes frontier-scale inference 4x cheaper overnight."
+
+━━━━━━━━━━━━━━━━━━
+Respond with ONLY the 2 sentences. No labels, no quotes, no explanation."""
 
         try:
             async with httpx.AsyncClient(timeout=20) as client:
@@ -371,8 +405,8 @@ Respond with ONLY the 1–2 sentence hook, nothing else."""
                     json={
                         "model": self.model,
                         "messages": [{"role": "user", "content": prompt}],
-                        "max_tokens": 100,
-                        "temperature": 0.75,
+                        "max_tokens": 160,
+                        "temperature": 0.80,
                     }
                 )
                 if resp.status_code == 200:
