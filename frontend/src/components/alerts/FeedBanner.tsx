@@ -1,6 +1,7 @@
 /**
- * FeedBanner — ONE unified rotating banner.
- * Cycles paper hooks + category hooks. Category items navigate to /papers/:type.
+ * FeedBanner — unified rotating banner.
+ * Two-line layout: bold hook + grey subtext nav hint.
+ * Category items → /papers/:type. Paper items → /paper/:id.
  */
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { motion } from 'framer-motion'
@@ -14,76 +15,89 @@ const ROTATE_MS = 6000
 interface CategoryItem {
   kind: 'category'
   type: 'trending' | 'gems' | 'new' | 'rising'
-  section_label: string
-  hook_text: string
+  emoji: string
+  hook: string
+  subtext: string
   style: string
 }
 interface PaperItem extends DailyHook { kind: 'paper' }
 type BannerItem = CategoryItem | PaperItem
 
-const CATEGORY_HOOKS: Record<string, {
-  label: string; style: string; hooks: string[]
-}> = {
-  trending: {
-    label: '🔥 Trending Papers',
-    style: 'border-orange-500/35 bg-orange-500/6',
+const CATS: {
+  type: CategoryItem['type']
+  emoji: string
+  style: string
+  subtext: string
+  hooks: string[]
+}[] = [
+  {
+    type: 'trending',
+    emoji: '🔥',
+    style: 'border-orange-500/30 bg-orange-500/5',
+    subtext: 'Top papers on the feed right now — tap to explore',
     hooks: [
-      "Top trending papers are here — see what the field is buzzing about",
-      "This week's highest-ranked AI papers — explore them",
-      "The community has spoken — discover the top trending papers",
-      "What researchers are reading and citing right now",
-      "Hot papers climbing the rankings — tap to explore",
+      "Top trending papers are here — see what the field is reading",
+      "The community's most-cited papers this week",
+      "High-signal research climbing the rankings — explore now",
+      "What researchers are reading and sharing right now",
+      "This week's hottest AI papers — don't miss them",
     ],
   },
-  gems: {
-    label: '💎 Hidden Gems',
-    style: 'border-purple-500/35 bg-purple-500/6',
+  {
+    type: 'gems',
+    emoji: '💎',
+    style: 'border-purple-500/30 bg-purple-500/5',
+    subtext: "High-impact work most haven't found yet — tap to explore",
     hooks: [
-      "Hidden gems this week — brilliant papers few have discovered yet",
-      "High-impact research flying under the radar",
-      "Before everyone else finds these — undiscovered gems inside",
+      "Hidden gems this week — brilliant papers few have discovered",
       "Strong signal, low views — overlooked papers worth reading",
+      "Before everyone else finds these — undiscovered gems inside",
+      "High-impact research flying under the radar",
       "Overlooked but exceptional — explore this week's hidden gems",
     ],
   },
-  new: {
-    label: '✨ New Papers',
-    style: 'border-cyan-500/35 bg-cyan-500/6',
+  {
+    type: 'new',
+    emoji: '✨',
+    style: 'border-cyan-500/30 bg-cyan-500/5',
+    subtext: 'Fresh research just landed in the feed — tap to explore',
     hooks: [
-      "Fresh papers just landed — new arXiv submissions, scored and ranked",
-      "New this week — the latest AI research added to the feed",
-      "Just added: this week's newest pre-prints and submissions",
+      "New papers just landed — scored and ranked for you",
+      "Latest arXiv submissions, fresh off the press",
+      "Just added: this week's newest pre-prints",
       "Hot off the press — explore everything added this week",
-      "Latest AI & ML research, freshly ranked for you",
+      "New AI & ML research, freshly ranked",
     ],
   },
-  rising: {
-    label: '📈 Rising Fast',
-    style: 'border-green-500/35 bg-green-500/6',
+  {
+    type: 'rising',
+    emoji: '📈',
+    style: 'border-green-500/30 bg-green-500/5',
+    subtext: 'Papers gaining traction fast — tap to explore',
     hooks: [
-      "Papers gaining momentum fast — tap to see what's rising",
-      "Rising stars in the rankings — papers to watch right now",
-      "Scores accelerating: these papers are on the move",
-      "Early movers gaining traction — get ahead of the trend",
+      "Papers gaining momentum fast — see what's rising",
+      "Rising stars in the rankings — papers to watch now",
       "These papers are climbing fast — explore the list",
+      "Early movers gaining traction across the field",
+      "Scores accelerating: papers on the move this week",
     ],
   },
-}
+]
 
-function dailyCategoryHook(type: string): CategoryItem {
-  const cat = CATEGORY_HOOKS[type]
+function dailyCatItem(cat: typeof CATS[number]): CategoryItem {
   const day = Math.floor(Date.now() / 86_400_000)
   return {
     kind: 'category',
-    type: type as CategoryItem['type'],
-    section_label: cat.label,
-    hook_text: cat.hooks[day % cat.hooks.length],
+    type: cat.type,
+    emoji: cat.emoji,
+    hook: cat.hooks[day % cat.hooks.length],
+    subtext: cat.subtext,
     style: cat.style,
   }
 }
 
 function buildItems(papers: DailyHook[]): BannerItem[] {
-  const cats = (['trending', 'gems', 'new', 'rising'] as const).map(dailyCategoryHook)
+  const cats = CATS.map(dailyCatItem)
   if (!papers.length) return cats
   const result: BannerItem[] = []
   let ci = 0
@@ -106,8 +120,7 @@ export function FeedBanner() {
   const [items, setItems]     = useState<BannerItem[]>([])
   const [current, setCurrent] = useState(0)
   const [dismissed, setDismissed] = useState(false)
-  const timerRef  = useRef<ReturnType<typeof setInterval> | null>(null)
-  // Store current index in a ref so click handlers always read latest value
+  const timerRef   = useRef<ReturnType<typeof setInterval> | null>(null)
   const currentRef = useRef(0)
   const itemsRef   = useRef<BannerItem[]>([])
   const navigate   = useNavigate()
@@ -120,7 +133,7 @@ export function FeedBanner() {
         itemsRef.current = list
       })
       .catch(() => {
-        const list = (['trending', 'gems', 'new', 'rising'] as const).map(dailyCategoryHook)
+        const list = CATS.map(dailyCatItem)
         setItems(list)
         itemsRef.current = list
       })
@@ -141,7 +154,6 @@ export function FeedBanner() {
     return () => { if (timerRef.current) clearInterval(timerRef.current) }
   }, [items.length, startTimer])
 
-  // Read item from ref so click always uses latest state
   const handleClick = useCallback(() => {
     const item = itemsRef.current[currentRef.current]
     if (!item) return
@@ -171,11 +183,14 @@ export function FeedBanner() {
 
   if (!items.length || dismissed) return null
 
-  const item      = items[current]
-  const isCat     = item.kind === 'category'
-  const style     = isCat ? (item as CategoryItem).style : paperStyle(item.section_label)
-  const label     = item.section_label
-  const hookText  = item.hook_text
+  const item     = items[current]
+  const isCat    = item.kind === 'category'
+  const style    = isCat ? (item as CategoryItem).style : paperStyle((item as PaperItem).section_label)
+  const emoji    = isCat ? (item as CategoryItem).emoji : (item as PaperItem).section_label.match(/^\p{Emoji}/u)?.[0] ?? '📄'
+  const hookText = isCat ? (item as CategoryItem).hook : (item as PaperItem).hook_text
+  const subtext  = isCat
+    ? (item as CategoryItem).subtext
+    : (item as PaperItem).section_label.replace(/^\p{Emoji}\s*/u, '')
 
   return (
     <motion.div
@@ -186,29 +201,26 @@ export function FeedBanner() {
       onClick={handleClick}
       className={`w-full rounded-xl px-4 py-3 border flex items-center gap-3 cursor-pointer group ${style}`}
     >
-      {/* Label */}
-      <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-white/8 text-white/80 whitespace-nowrap shrink-0">
-        {label}
-      </span>
+      {/* Emoji */}
+      <span className="text-xl shrink-0 select-none">{emoji}</span>
 
-      {/* Hook text */}
-      <p className="flex-1 text-sm text-white font-semibold leading-tight line-clamp-1 group-hover:text-white/80 transition-colors">
-        {hookText}
-      </p>
-
-      {/* "View list" hint for category items */}
-      {isCat && (
-        <span className="hidden sm:flex items-center gap-1 text-[11px] text-white/40 group-hover:text-white/70 transition-colors shrink-0 pointer-events-none">
-          View list <ArrowRight size={10} />
-        </span>
-      )}
+      {/* Two-line content */}
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-bold text-white leading-tight line-clamp-1 group-hover:text-white/90 transition-colors">
+          {hookText}
+        </p>
+        <p className="text-[11px] text-slate-400/80 mt-0.5 flex items-center gap-1 line-clamp-1">
+          {subtext}
+          {isCat && <ArrowRight size={10} className="inline shrink-0 opacity-50" />}
+        </p>
+      </div>
 
       {/* Dots + prev/next/dismiss */}
       <div className="flex items-center gap-1 shrink-0">
         <div className="hidden sm:flex items-center gap-1 mr-1">
           {items.map((it, i) => (
             <div key={i} className={`rounded-full transition-all duration-300 ${
-              i === current        ? 'w-4 h-1.5 bg-white/50'
+              i === current           ? 'w-4 h-1.5 bg-white/50'
               : it.kind === 'category' ? 'w-2 h-1.5 bg-white/30'
               : 'w-1.5 h-1.5 bg-white/15'
             }`} />
