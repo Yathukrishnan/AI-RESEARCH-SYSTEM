@@ -56,13 +56,13 @@ async def generate_alerts(db: TursoClient) -> List[Dict]:
 
     # ── Trending papers ───────────────────────────────────────────────────
     try:
-        trending_count = await db.count("papers", "is_trending = 1 AND is_deleted = 0")
-        if trending_count:
+        has_trending = await db.count("papers", "is_trending = 1 AND is_deleted = 0")
+        if has_trending:
             alerts.append({
                 "type": "trending",
                 "emoji": "🔥",
                 "title": random.choice(_TRENDING_HOOKS),
-                "message": f"{trending_count} trending papers · tap to explore",
+                "message": "Top papers on the feed right now — tap to explore",
                 "navigate_to": "trending",
             })
     except Exception:
@@ -71,15 +71,15 @@ async def generate_alerts(db: TursoClient) -> List[Dict]:
     # ── New papers (last 7 days) ───────────────────────────────────────
     try:
         since = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
-        new_count = await db.count(
+        has_new = await db.count(
             "papers", "created_at > ? AND is_deleted = 0", [since]
         )
-        if new_count:
+        if has_new:
             alerts.append({
                 "type": "new_papers",
                 "emoji": "✨",
                 "title": random.choice(_NEW_HOOKS),
-                "message": f"{new_count} papers added · tap to explore",
+                "message": "Fresh research just landed in the feed — tap to explore",
                 "navigate_to": "new",
             })
     except Exception:
@@ -87,16 +87,16 @@ async def generate_alerts(db: TursoClient) -> List[Dict]:
 
     # ── Hidden gems ───────────────────────────────────────────────────
     try:
-        gems_count = await db.count(
+        has_gems = await db.count(
             "papers",
             "normalized_score > 0.3 AND view_count < 30 AND is_deleted = 0 AND is_above_threshold = 1",
         )
-        if gems_count:
+        if has_gems:
             alerts.append({
                 "type": "hidden_gems",
                 "emoji": "💎",
                 "title": random.choice(_GEM_HOOKS),
-                "message": f"{gems_count} hidden gems · tap to explore",
+                "message": "High-signal papers most haven't found yet — tap to explore",
                 "navigate_to": "gems",
             })
     except Exception:
@@ -104,17 +104,17 @@ async def generate_alerts(db: TursoClient) -> List[Dict]:
 
     # ── Rising papers ─────────────────────────────────────────────────
     try:
-        rising_count = await db.count(
+        has_rising = await db.count(
             "papers",
             "is_above_threshold = 1 AND is_deleted = 0 "
             "AND date(COALESCE(last_scored_at, created_at)) >= date('now', '-3 days')",
         )
-        if rising_count:
+        if has_rising:
             alerts.append({
                 "type": "high_growth",
                 "emoji": "📈",
                 "title": random.choice(_RISING_HOOKS),
-                "message": f"{rising_count} papers rising · tap to explore",
+                "message": "Papers gaining traction fast across the field — tap to explore",
                 "navigate_to": "rising",
             })
     except Exception:
