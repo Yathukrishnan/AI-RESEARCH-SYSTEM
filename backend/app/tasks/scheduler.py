@@ -68,7 +68,7 @@ async def _daily_hook_generation():
         from app.tasks.paper_tasks import generate_daily_hooks, generate_rich_journalist_hooks
 
         # Generate rich journalist hooks for all papers missing one
-        rich_count = await generate_rich_journalist_hooks(batch_size=500, force=False)
+        rich_count = await generate_rich_journalist_hooks(batch_size=200, force=False)
         logger.info(f"Daily hook generation: {rich_count} rich journalist hooks generated")
 
         # Generate today's 15 rotating daily hooks for the headline banner
