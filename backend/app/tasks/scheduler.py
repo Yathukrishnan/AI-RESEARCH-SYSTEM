@@ -57,12 +57,21 @@ async def _weekly_content_transition():
 
 
 async def _daily_hook_generation():
-    """Generate today's 15 rotating hooks. Runs daily at 03:15 UTC."""
+    """
+    Runs daily at 04:30 UTC — after fetch (02:30), enrich (hourly), rescore (04:00).
+
+    Generates rich journalist hooks (4-6 sentence Wired/Atlantic-style) for all
+    papers missing one. Covers today's new papers so they're ready before
+    Tuesday's feed goes live. Also generates the 15 rotating daily headline hooks.
+    """
     try:
-        from app.tasks.paper_tasks import generate_daily_hooks, generate_missing_hooks
-        # First fill any papers that still have no hook_text at all (backfill)
-        await generate_missing_hooks(batch_size=200)
-        # Then generate today's 15 rotating daily hooks
+        from app.tasks.paper_tasks import generate_daily_hooks, generate_rich_journalist_hooks
+
+        # Generate rich journalist hooks for all papers missing one
+        rich_count = await generate_rich_journalist_hooks(batch_size=500, force=False)
+        logger.info(f"Daily hook generation: {rich_count} rich journalist hooks generated")
+
+        # Generate today's 15 rotating daily hooks for the headline banner
         count = await generate_daily_hooks(count=15)
         logger.info(f"Daily hook generation: {count} daily hooks generated")
     except Exception as e:
