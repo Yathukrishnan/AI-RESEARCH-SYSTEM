@@ -872,7 +872,7 @@ async def generate_landing_content(batch_size: int = 100, force: bool = False) -
     return processed
 
 
-async def generate_rich_journalist_hooks(batch_size: int = 200, force: bool = False) -> int:
+async def generate_rich_journalist_hooks(batch_size: int = 2000, force: bool = False) -> int:
     """
     Generate rich Wired/Atlantic-style journalist hooks (4-6 sentences, ~150-250 words)
     for all public-facing papers and save to ai_journalist_hook column.

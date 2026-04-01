@@ -609,8 +609,8 @@ function AnalysisAdmin() {
   const generateRichHooks = async (force: boolean) => {
     setRunning(true)
     try {
-      await adminApi.triggerRichHooks(500, force)
-      toast.success(force ? 'Regenerating ALL rich journalist hooks (500 papers)…' : 'Filling missing rich hooks (500 papers)…')
+      await adminApi.triggerRichHooks(2000, force)
+      toast.success(force ? 'Regenerating ALL rich journalist hooks — all papers…' : 'Filling missing rich hooks — all papers…')
     } catch {
       toast.error('Failed to start rich hook generation')
     } finally {
