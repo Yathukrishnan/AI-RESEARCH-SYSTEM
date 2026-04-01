@@ -849,23 +849,23 @@ async def get_landing(db: TursoClient = Depends(get_db)):
       - breaking: top 5 papers with strongest community signal
       - categories: all papers grouped into human topics, 5 hooks per category
     """
-    cache_key = f"landing_v2:{date.today().isoformat()}"
+    current_week = await _current_week(db)
+    cache_key = f"landing_v3:w{current_week}:{date.today().isoformat()}"
     cached = await cache_get(cache_key)
     if cached:
         return cached
 
-    # ── Fetch a wide pool of the best visible papers ──────────────────────────
-    # Pull enough to fill every category (10 topics × 5 papers = 50 minimum)
-    # Order: trending/social first, then by score — ensures community-hot papers
-    # appear at the top of their category
+    # ── Fetch current week's papers ───────────────────────────────────────────
     pool_rows = await db.fetchall(
         f"SELECT {_LANDING_SELECT} FROM papers "
         "WHERE is_deleted=0 AND is_duplicate=0 "
-        "AND (hook_text IS NOT NULL OR abstract IS NOT NULL OR ai_summary IS NOT NULL) "
+        "AND COALESCE(display_week, 1) <= ? "
         "ORDER BY "
-        "  (COALESCE(hf_upvotes,0)*0.4 + COALESCE(hn_points,0)*0.35 + "
-        "   COALESCE(trending_score,0)*100 + COALESCE(normalized_score,0)*20) DESC "
-        "LIMIT 500"
+        "  (COALESCE(hf_upvotes,0)*0.35 + COALESCE(hn_points,0)*0.25 + "
+        "   COALESCE(citation_count,0)*0.02 + COALESCE(github_stars,0)*0.005 + "
+        "   COALESCE(normalized_score,0)*30) DESC "
+        "LIMIT 500",
+        [current_week]
     )
 
     from collections import defaultdict
@@ -936,22 +936,28 @@ async def get_topic_papers(
 ):
     """
     All papers for a given human topic — paginated.
-    Works without ai_topic_category: derives topic on-the-fly from arXiv categories.
-    Fetches a large pool and filters in Python so pagination is consistent.
+    Uses current week's papers only (display_week <= current_week).
+    Top-10 pinned by combined credibility score; remainder rotates daily.
     """
     if topic not in _TOPIC_META:
         return {"papers": [], "total": 0, "topic": topic, "meta": None}
 
-    # Fetch a large pool sorted by relevance; filter by topic in Python
+    current_week = await _current_week(db)
+
+    # Fetch current week's papers — no text filter, we generate hooks from title if needed
     pool_rows = await db.fetchall(
         f"SELECT {_LANDING_SELECT} FROM papers "
         "WHERE is_deleted=0 AND is_duplicate=0 "
-        "AND (hook_text IS NOT NULL OR abstract IS NOT NULL OR ai_summary IS NOT NULL) "
-        "ORDER BY COALESCE(is_trending,0) DESC, normalized_score DESC "
-        "LIMIT 2000"
+        "AND COALESCE(display_week, 1) <= ? "
+        "ORDER BY "
+        "  (COALESCE(hf_upvotes,0)*0.35 + COALESCE(hn_points,0)*0.25 + "
+        "   COALESCE(citation_count,0)*0.02 + COALESCE(github_stars,0)*0.005 + "
+        "   COALESCE(normalized_score,0)*30) DESC "
+        "LIMIT 2000",
+        [current_week]
     )
 
-    # Filter to matching topic
+    # Filter to matching topic, keeping credibility-sorted order
     matched = []
     for r in pool_rows:
         p = _parse_landing(dict(r))
@@ -993,12 +999,13 @@ async def get_topic_papers(
         page_papers = rotating[rot_offset: rot_offset + ROTATE_PER_PAGE]
         has_more = (rot_offset + ROTATE_PER_PAGE) < len(rotating)
 
-    # ── Generate journalist hooks for papers on this page that lack one ───────
-    # A "rich" hook is ≥120 chars. Short hook_text values are regenerated.
-    # Uses semaphore=4, awaited before response so every paper has a good hook.
+    # ── Generate journalist hooks for papers on this page that lack a rich one ──
+    # Rich hook = ≥500 chars (4-6 sentences, ~150-250 words).
+    # Short hooks (<500 chars) are single-sentence placeholders that need upgrading.
+    # semaphore=5 keeps first-page load under ~6s for a cold batch.
     papers_needing_hooks = [
         p for p in page_papers
-        if not p.get("ai_journalist_hook") or len(p.get("ai_journalist_hook", "")) < 120
+        if not p.get("ai_journalist_hook") or len(p.get("ai_journalist_hook", "")) < 500
     ]
     if papers_needing_hooks:
         try:
@@ -1006,7 +1013,7 @@ async def get_topic_papers(
             from app.core.config import settings
             _ai = AIValidationService(settings.OPENROUTER_API_KEY)
             topic_label_str = _TOPIC_META.get(topic, {}).get("label", "AI Research")
-            sem = asyncio.Semaphore(4)
+            sem = asyncio.Semaphore(5)
 
             async def _gen_hook(p: dict):
                 async with sem:
@@ -1078,10 +1085,10 @@ async def get_report(paper_id: int, db: TursoClient = Depends(get_db)):
     topic_label_early = _TOPIC_META.get(topic_early, {}).get("label", "AI Research")
 
     # ── Generate rich report-page journalist hook on-the-fly ──────────────────
-    # Generate if: no hook stored, OR stored hook is short (≤120 chars = just hook_text,
-    # not a real magazine opener). Rich hooks are 150-250 words — store and reuse.
+    # A rich hook is 150-250 words (~900-1500 chars). Anything <500 chars is
+    # a short single-sentence hook that needs upgrading to the full narrative.
     _report_hook = paper.get("ai_journalist_hook") or ""
-    _needs_regen = not _report_hook or len(_report_hook) < 120
+    _needs_regen = not _report_hook or len(_report_hook) < 500
     if _needs_regen:
         try:
             from app.services.ai_service import AIValidationService
