@@ -251,6 +251,7 @@ export interface TopicMeta {
   label: string
   tagline: string
   color: string
+  hook?: string  // journalist-style narrative hook for the topic
 }
 
 export interface LandingCategory {
@@ -259,6 +260,8 @@ export interface LandingCategory {
   label: string
   tagline: string
   color: string
+  // Journalist narrative hook for the whole topic (shown on landing page)
+  topic_hook?: string
   paper_count: number
   papers: LandingPaper[]
 }

@@ -681,60 +681,71 @@ _TOPIC_META = {
         "label": "Language & AI",
         "tagline": "How machines are learning to talk, read, reason — and change how we work",
         "color": "blue",
+        # Journalist-style hook shown on the landing page — no paper details, just narrative
+        "hook": "Right now, thousands of engineers are in a race to build an AI that reads, writes, and reasons better than any human — and this week's papers show they are dangerously close.",
     },
     "Vision": {
         "emoji": "👁️",
         "label": "Vision & Creativity",
         "tagline": "Teaching computers to see, understand images, and create stunning visuals",
         "color": "pink",
+        "hook": "Somewhere in a research lab tonight, an AI is learning to see the world the way a child does — and what it is finding is quietly changing everything, from medicine to art to how we remember the past.",
     },
     "Robots": {
         "emoji": "🤖",
         "label": "Robots & Automation",
         "tagline": "The machines that move, build, and act in the physical world",
         "color": "orange",
+        "hook": "The robot revolution everyone predicted in science fiction is finally happening — it just looks nothing like what anyone imagined, and the latest research shows it is arriving faster than most people are ready for.",
     },
     "Health": {
         "emoji": "🧬",
         "label": "Medicine & Health",
         "tagline": "AI finding cures, predicting illness, and accelerating drug discovery",
         "color": "green",
+        "hook": "The same AI powering your phone is being quietly trained on millions of patient records — and it just found drug combinations that doctors missed for decades. The question now is whether we are ready to trust it with our lives.",
     },
     "Safety": {
         "emoji": "🛡️",
         "label": "AI Safety & Trust",
         "tagline": "Making AI systems that humans can actually trust and control",
         "color": "red",
+        "hook": "The people building the most powerful AI systems in human history are also the ones most publicly worried about what happens if they succeed — and their latest research explains exactly what keeps them up at night.",
     },
     "Science": {
         "emoji": "🔬",
         "label": "Science & Discovery",
         "tagline": "AI accelerating breakthroughs across physics, chemistry, and beyond",
         "color": "cyan",
+        "hook": "AI does not get tired, does not have hunches, and does not give up — which is exactly why it is now solving scientific problems that stumped the world's best researchers for decades.",
     },
     "Efficiency": {
         "emoji": "⚡",
         "label": "Speed & Efficiency",
         "tagline": "Making AI smaller, faster, and cheaper — so it runs anywhere",
         "color": "yellow",
+        "hook": "The biggest secret in AI right now is not about making models smarter — it is about making them small enough to run in your pocket, on a cheap chip, without the internet. That race is almost won.",
     },
     "Business": {
         "emoji": "💼",
         "label": "Business & Economy",
         "tagline": "AI reshaping how companies operate, compete, and serve customers",
         "color": "purple",
+        "hook": "Every company on earth is quietly asking the same question right now: what happens to our business when AI can do everything our best employees do — and the answer coming from this week's research is not reassuring.",
     },
     "Climate": {
         "emoji": "🌍",
         "label": "Climate & Energy",
         "tagline": "Using AI to understand and fight climate change before time runs out",
         "color": "emerald",
+        "hook": "Hidden inside thousands of climate research papers lies a simple question that has stumped scientists for fifty years — and AI is now giving us the clearest answer we have ever had about what is coming and what we can still do.",
     },
     "General": {
         "emoji": "🧠",
         "label": "Big Ideas",
         "tagline": "Research that doesn't fit a single box — but still matters enormously",
         "color": "slate",
+        "hook": "Some of the most important discoveries in AI do not fit a neat category — they just quietly appear in the research, get ignored for months, and then suddenly change everything. These are this week's ones to watch.",
     },
 }
 
@@ -743,7 +754,8 @@ _LANDING_SELECT = (
     "published_at, pdf_url, github_url, github_stars, citation_count, h_index_max, "
     "normalized_score, current_score, trend_label, ai_topic_tags, ai_summary, hook_text, "
     "hf_upvotes, hn_points, hn_comments, citation_velocity, trending_score, "
-    "view_count, save_count, ai_topic_category, ai_lay_summary, ai_why_important, ai_key_findings"
+    "view_count, save_count, ai_topic_category, ai_lay_summary, ai_why_important, "
+    "ai_key_findings, ai_journalist_hook"
 )
 
 # arXiv prefix → topic (mirrors ai_service.py heuristic, no AI call needed)

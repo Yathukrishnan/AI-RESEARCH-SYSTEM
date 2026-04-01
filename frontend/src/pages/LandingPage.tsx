@@ -1,271 +1,185 @@
+/**
+ * LandingPage — public-facing, non-technical entry point.
+ *
+ * Shows ONE journalist-style narrative hook per topic group.
+ * No paper titles, no scores, no technical details.
+ * Every element either clicks through to the topic page or hero report.
+ *
+ * Flow:  Landing  →  /explore/:topic  →  /report/:id  →  source paper
+ */
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import {
-  Search, Flame, TrendingUp, Zap, Loader2,
-  ArrowRight, LayoutGrid, ChevronRight
-} from 'lucide-react'
+import { Search, Loader2, ArrowRight, ChevronRight, LayoutGrid } from 'lucide-react'
 import { Navbar } from '@/components/layout/Navbar'
 import { landingApi } from '@/lib/api'
-import { LandingData, LandingPaper, LandingCategory } from '@/lib/types'
-import { truncate } from '@/lib/utils'
+import { LandingData, LandingCategory } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
-// ── Colour map ────────────────────────────────────────────────────────────────
+// ── Colour tokens per topic ──────────────────────────────────────────────────
 const COLORS: Record<string, {
-  border: string; headerBg: string; headerText: string
-  hookHover: string; pill: string; dot: string
+  card: string; border: string; glow: string
+  emojiRing: string; label: string; hook: string; cta: string
 }> = {
-  blue:    { border: 'border-blue-500/20',    headerBg: 'bg-blue-500/8',    headerText: 'text-blue-300',    hookHover: 'hover:text-blue-200',    pill: 'bg-blue-500/15 border-blue-500/25 text-blue-300',    dot: 'bg-blue-400' },
-  pink:    { border: 'border-pink-500/20',    headerBg: 'bg-pink-500/8',    headerText: 'text-pink-300',    hookHover: 'hover:text-pink-200',    pill: 'bg-pink-500/15 border-pink-500/25 text-pink-300',    dot: 'bg-pink-400' },
-  orange:  { border: 'border-orange-500/20',  headerBg: 'bg-orange-500/8',  headerText: 'text-orange-300',  hookHover: 'hover:text-orange-200',  pill: 'bg-orange-500/15 border-orange-500/25 text-orange-300',  dot: 'bg-orange-400' },
-  green:   { border: 'border-green-500/20',   headerBg: 'bg-green-500/8',   headerText: 'text-green-300',   hookHover: 'hover:text-green-200',   pill: 'bg-green-500/15 border-green-500/25 text-green-300',   dot: 'bg-green-400' },
-  red:     { border: 'border-red-500/20',     headerBg: 'bg-red-500/8',     headerText: 'text-red-300',     hookHover: 'hover:text-red-200',     pill: 'bg-red-500/15 border-red-500/25 text-red-300',     dot: 'bg-red-400' },
-  cyan:    { border: 'border-cyan-500/20',    headerBg: 'bg-cyan-500/8',    headerText: 'text-cyan-300',    hookHover: 'hover:text-cyan-200',    pill: 'bg-cyan-500/15 border-cyan-500/25 text-cyan-300',    dot: 'bg-cyan-400' },
-  yellow:  { border: 'border-yellow-500/20',  headerBg: 'bg-yellow-500/8',  headerText: 'text-yellow-300',  hookHover: 'hover:text-yellow-200',  pill: 'bg-yellow-500/15 border-yellow-500/25 text-yellow-300',  dot: 'bg-yellow-400' },
-  purple:  { border: 'border-purple-500/20',  headerBg: 'bg-purple-500/8',  headerText: 'text-purple-300',  hookHover: 'hover:text-purple-200',  pill: 'bg-purple-500/15 border-purple-500/25 text-purple-300',  dot: 'bg-purple-400' },
-  emerald: { border: 'border-emerald-500/20', headerBg: 'bg-emerald-500/8', headerText: 'text-emerald-300', hookHover: 'hover:text-emerald-200', pill: 'bg-emerald-500/15 border-emerald-500/25 text-emerald-300', dot: 'bg-emerald-400' },
-  slate:   { border: 'border-slate-500/20',   headerBg: 'bg-slate-500/8',   headerText: 'text-slate-300',   hookHover: 'hover:text-slate-200',   pill: 'bg-slate-500/15 border-slate-500/25 text-slate-300',   dot: 'bg-slate-400' },
+  blue:    { card: 'bg-blue-950/30',    border: 'border-blue-500/20',    glow: 'hover:border-blue-400/35 hover:shadow-blue-500/8',    emojiRing: 'bg-blue-500/15 border-blue-500/25',    label: 'text-blue-300',    hook: 'text-white/85 hover:text-blue-100',    cta: 'text-blue-400/70 hover:text-blue-300' },
+  pink:    { card: 'bg-pink-950/30',    border: 'border-pink-500/20',    glow: 'hover:border-pink-400/35 hover:shadow-pink-500/8',    emojiRing: 'bg-pink-500/15 border-pink-500/25',    label: 'text-pink-300',    hook: 'text-white/85 hover:text-pink-100',    cta: 'text-pink-400/70 hover:text-pink-300' },
+  orange:  { card: 'bg-orange-950/30',  border: 'border-orange-500/20',  glow: 'hover:border-orange-400/35 hover:shadow-orange-500/8',  emojiRing: 'bg-orange-500/15 border-orange-500/25',  label: 'text-orange-300',  hook: 'text-white/85 hover:text-orange-100',  cta: 'text-orange-400/70 hover:text-orange-300' },
+  green:   { card: 'bg-green-950/30',   border: 'border-green-500/20',   glow: 'hover:border-green-400/35 hover:shadow-green-500/8',   emojiRing: 'bg-green-500/15 border-green-500/25',   label: 'text-green-300',   hook: 'text-white/85 hover:text-green-100',   cta: 'text-green-400/70 hover:text-green-300' },
+  red:     { card: 'bg-red-950/30',     border: 'border-red-500/20',     glow: 'hover:border-red-400/35 hover:shadow-red-500/8',     emojiRing: 'bg-red-500/15 border-red-500/25',     label: 'text-red-300',     hook: 'text-white/85 hover:text-red-100',     cta: 'text-red-400/70 hover:text-red-300' },
+  cyan:    { card: 'bg-cyan-950/30',    border: 'border-cyan-500/20',    glow: 'hover:border-cyan-400/35 hover:shadow-cyan-500/8',    emojiRing: 'bg-cyan-500/15 border-cyan-500/25',    label: 'text-cyan-300',    hook: 'text-white/85 hover:text-cyan-100',    cta: 'text-cyan-400/70 hover:text-cyan-300' },
+  yellow:  { card: 'bg-yellow-950/30',  border: 'border-yellow-500/20',  glow: 'hover:border-yellow-400/35 hover:shadow-yellow-500/8',  emojiRing: 'bg-yellow-500/15 border-yellow-500/25',  label: 'text-yellow-300',  hook: 'text-white/85 hover:text-yellow-100',  cta: 'text-yellow-400/70 hover:text-yellow-300' },
+  purple:  { card: 'bg-purple-950/30',  border: 'border-purple-500/20',  glow: 'hover:border-purple-400/35 hover:shadow-purple-500/8',  emojiRing: 'bg-purple-500/15 border-purple-500/25',  label: 'text-purple-300',  hook: 'text-white/85 hover:text-purple-100',  cta: 'text-purple-400/70 hover:text-purple-300' },
+  emerald: { card: 'bg-emerald-950/30', border: 'border-emerald-500/20', glow: 'hover:border-emerald-400/35 hover:shadow-emerald-500/8', emojiRing: 'bg-emerald-500/15 border-emerald-500/25', label: 'text-emerald-300', hook: 'text-white/85 hover:text-emerald-100', cta: 'text-emerald-400/70 hover:text-emerald-300' },
+  slate:   { card: 'bg-slate-800/30',   border: 'border-slate-500/20',   glow: 'hover:border-slate-400/35 hover:shadow-slate-500/8',   emojiRing: 'bg-slate-500/15 border-slate-500/25',   label: 'text-slate-300',   hook: 'text-white/85 hover:text-slate-100',   cta: 'text-slate-400/70 hover:text-slate-300' },
 }
 
-function getHook(p: LandingPaper): string {
-  return p.hook_text || p.ai_lay_summary?.split('.')[0] || p.title
+// ── Topic Card ────────────────────────────────────────────────────────────────
+// Shows only: emoji, topic label, journalist hook, paper count, "Explore" CTA
+function TopicCard({ cat, index, onClick }: {
+  cat: LandingCategory
+  index: number
+  onClick: () => void
+}) {
+  const c = COLORS[cat.color] || COLORS.slate
+  // Use AI-generated hook from top paper if backend sends one,
+  // otherwise use the static topic meta hook stored in cat.hook
+  const narrativeHook: string = (cat as any).topic_hook || cat.tagline
+
+  return (
+    <motion.article
+      initial={{ opacity: 0, y: 24 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: Math.min(index * 0.06, 0.55), duration: 0.45 }}
+      onClick={onClick}
+      className={cn(
+        'group relative cursor-pointer rounded-2xl border p-6 flex flex-col gap-4',
+        'transition-all duration-300 hover:shadow-lg',
+        c.card, c.border, c.glow
+      )}
+    >
+      {/* Header: emoji ring + topic label + count badge */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <span className={cn('w-11 h-11 rounded-xl border flex items-center justify-center text-2xl shrink-0', c.emojiRing)}>
+            {cat.emoji}
+          </span>
+          <div>
+            <p className={cn('text-sm font-bold tracking-wide', c.label)}>{cat.label}</p>
+            <p className="text-[11px] text-muted/50 mt-0.5">
+              {cat.paper_count} paper{cat.paper_count !== 1 ? 's' : ''} this week
+            </p>
+          </div>
+        </div>
+        <ChevronRight
+          size={16}
+          className={cn('shrink-0 transition-transform group-hover:translate-x-1', c.label)}
+        />
+      </div>
+
+      {/* THE HOOK — the only text content that matters */}
+      <p className={cn(
+        'text-[1.05rem] font-medium leading-relaxed transition-colors flex-1',
+        c.hook
+      )}>
+        {narrativeHook}
+      </p>
+
+      {/* CTA at the bottom */}
+      <div className={cn('flex items-center gap-1.5 text-xs font-semibold transition-colors', c.cta)}>
+        Read the stories <ArrowRight size={12} className="transition-transform group-hover:translate-x-0.5" />
+      </div>
+    </motion.article>
+  )
 }
 
-// ── HERO — big hook, community badges, one CTA ───────────────────────────────
-function Hero({ paper, onRead }: { paper: LandingPaper; onRead: () => void }) {
-  const hook = getHook(paper)
+// ── Hero ──────────────────────────────────────────────────────────────────────
+// The single most discussed paper — shown as a big narrative hook, nothing else
+function HeroHook({ data, onRead }: { data: LandingData; onRead: () => void }) {
+  const paper = data.hero
+  if (!paper) return null
+
+  const hook =
+    (paper as any).ai_journalist_hook ||
+    paper.hook_text ||
+    paper.ai_lay_summary?.split('.')[0] ||
+    paper.title
+
   const hf = paper.hf_upvotes || 0
   const hn = paper.hn_points || 0
   const stars = paper.github_stars || 0
+  const hasSocial = hf > 0 || hn > 0 || stars > 0
 
   return (
     <motion.section
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5 }}
-      className="relative overflow-hidden rounded-3xl border border-accent/25 bg-gradient-to-br from-surface via-surface to-accent/5 p-8 md:p-10 cursor-pointer group"
       onClick={onRead}
+      className="relative overflow-hidden cursor-pointer group rounded-3xl border border-accent/25 bg-gradient-to-br from-surface via-surface to-accent/5 px-8 py-10 md:px-12 md:py-12"
     >
-      <div className="absolute -top-24 -right-24 w-96 h-96 bg-accent/4 rounded-full blur-3xl pointer-events-none" />
+      {/* Subtle glow */}
+      <div className="absolute -top-20 -right-20 w-80 h-80 bg-accent/4 rounded-full blur-3xl pointer-events-none" />
 
-      <div className="relative space-y-5 max-w-3xl">
+      <div className="relative max-w-3xl space-y-5">
         {/* Live badge */}
         <div className="flex items-center gap-3">
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-red-500/15 border border-red-500/30 text-red-400 text-xs font-bold tracking-wide">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-red-500/15 border border-red-500/30 text-red-400 text-xs font-bold tracking-widest">
             <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse inline-block" />
-            FEATURED TODAY
+            TODAY'S TOP STORY
           </span>
-          {paper.trend_label && (
-            <span className="text-xs text-muted/60">{paper.trend_label}</span>
-          )}
         </div>
 
-        {/* The hook — large and prominent */}
-        <h1 className="text-3xl md:text-[2.4rem] font-extrabold text-white leading-tight tracking-tight group-hover:text-accent-2 transition-colors">
-          {truncate(hook, 160)}
-        </h1>
+        {/* The hook — big */}
+        <h2 className="text-3xl md:text-4xl font-extrabold text-white leading-tight tracking-tight group-hover:text-accent-2 transition-colors">
+          {hook}
+        </h2>
 
-        {/* Lay summary if available */}
-        {paper.ai_lay_summary && (
-          <p className="text-base text-slate-400 leading-relaxed border-l-2 border-accent/30 pl-4 max-w-2xl">
-            {truncate(paper.ai_lay_summary, 220)}
+        {/* Community scale — only if present, and only as human context */}
+        {hasSocial && (
+          <p className="text-sm text-slate-400 leading-relaxed">
+            {hf > 0 && hn > 0
+              ? `${hf.toLocaleString()} AI engineers bookmarked it and ${hn} developers discussed it on Hacker News — that's rare.`
+              : hf > 0
+              ? `${hf.toLocaleString()} AI engineers bookmarked this research this week.`
+              : hn > 0
+              ? `${hn} developers are discussing this right now on Hacker News.`
+              : stars > 0
+              ? `${stars.toLocaleString()} developers starred the code on GitHub.`
+              : ''}
           </p>
         )}
 
-        {/* Community proof pills — only if non-zero */}
-        {(hf > 0 || hn > 0 || stars > 0) && (
-          <div className="flex flex-wrap gap-2">
-            {hf > 0 && (
-              <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-orange-500/12 border border-orange-500/25 text-orange-300 text-sm font-medium">
-                🤗 {hf.toLocaleString()} AI engineers discussing this
-              </span>
-            )}
-            {hn > 0 && (
-              <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-500/12 border border-amber-500/25 text-amber-300 text-sm font-medium">
-                🟠 {hn} points on Hacker News
-              </span>
-            )}
-            {stars > 0 && (
-              <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-yellow-500/12 border border-yellow-500/25 text-yellow-300 text-sm font-medium">
-                ⭐ {stars >= 1000 ? `${(stars / 1000).toFixed(1)}k` : stars} GitHub stars
-              </span>
-            )}
-          </div>
-        )}
-
         {/* CTA */}
-        <div className="flex items-center gap-2 pt-1">
-          <button
-            onClick={onRead}
-            className="inline-flex items-center gap-2 px-5 py-2.5 bg-accent text-background font-semibold text-sm rounded-xl hover:bg-accent/90 transition-all"
-          >
-            Read the full report <ArrowRight size={14} />
-          </button>
-          <span className="text-xs text-muted/50">3 min read · no jargon</span>
-        </div>
+        <button
+          onClick={onRead}
+          className="inline-flex items-center gap-2 px-6 py-3 bg-accent text-background font-bold text-sm rounded-xl hover:bg-accent/90 transition-all"
+        >
+          Read the full story <ArrowRight size={14} />
+        </button>
       </div>
     </motion.section>
   )
 }
 
-// ── BREAKING STRIP — 5 hooks in a scrollable row ─────────────────────────────
-function BreakingStrip({ papers, onSelect }: { papers: LandingPaper[]; onSelect: (p: LandingPaper) => void }) {
-  if (!papers.length) return null
-  return (
-    <section>
-      <div className="flex items-center gap-2 mb-4">
-        <Flame size={14} className="text-orange-400" />
-        <span className="text-xs font-bold tracking-widest text-orange-400/80 uppercase">Most Discussed Right Now</span>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        {papers.slice(0, 6).map((p, i) => {
-          const hook = getHook(p)
-          const hf = p.hf_upvotes || 0
-          const hn = p.hn_points || 0
-          return (
-            <motion.div
-              key={p.id}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.06, duration: 0.3 }}
-              onClick={() => onSelect(p)}
-              className="group cursor-pointer rounded-xl border border-orange-500/15 bg-orange-500/3 hover:border-orange-500/35 hover:bg-orange-500/6 p-4 transition-all"
-            >
-              <p className="text-sm font-semibold text-white/90 leading-snug group-hover:text-white transition-colors line-clamp-3">
-                {truncate(hook, 140)}
-              </p>
-              <div className="flex items-center gap-2 mt-2.5">
-                {hf > 0 && <span className="text-[11px] text-orange-400/70">🤗 {hf.toLocaleString()}</span>}
-                {hn > 0 && <span className="text-[11px] text-amber-400/70">🟠 {hn}</span>}
-                <span className="ml-auto text-[11px] text-muted/40 group-hover:text-orange-300/60 transition-colors flex items-center gap-0.5">
-                  Read <ArrowRight size={9} />
-                </span>
-              </div>
-            </motion.div>
-          )
-        })}
-      </div>
-    </section>
-  )
-}
-
-// ── TOPIC CARD — header + 5 clickable hook lines ──────────────────────────────
-function TopicCard({ cat, delay, onTopicClick, onPaperClick }: {
-  cat: LandingCategory
-  delay: number
-  onTopicClick: () => void
-  onPaperClick: (p: LandingPaper) => void
-}) {
-  const c = COLORS[cat.color] || COLORS.slate
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay, duration: 0.4 }}
-      className={cn('rounded-2xl border flex flex-col overflow-hidden', c.border)}
-    >
-      {/* Section header */}
-      <div
-        className={cn('flex items-center justify-between px-5 py-4 cursor-pointer group', c.headerBg)}
-        onClick={onTopicClick}
-      >
-        <div className="flex items-center gap-3">
-          <span className="text-2xl">{cat.emoji}</span>
-          <div>
-            <p className={cn('text-sm font-bold', c.headerText)}>{cat.label}</p>
-            <p className="text-[11px] text-muted/60 mt-0.5">{cat.tagline}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className={cn('text-[10px] font-medium px-2 py-0.5 rounded-full border', c.pill)}>
-            {cat.paper_count} papers
-          </span>
-          <ChevronRight size={14} className={cn('transition-transform group-hover:translate-x-0.5', c.headerText)} />
-        </div>
-      </div>
-
-      {/* Hook list — each hook is a clickable headline */}
-      <div className="divide-y divide-white/5 flex-1">
-        {cat.papers.map((p, i) => {
-          const hook = getHook(p)
-          const hf = p.hf_upvotes || 0
-          const hn = p.hn_points || 0
-          const isTrending = (p.trend_label || '').includes('🔥') || (p.trending_score || 0) > 0.4
-
-          return (
-            <div
-              key={p.id}
-              onClick={() => onPaperClick(p)}
-              className={cn(
-                'group flex items-start gap-3 px-5 py-3.5 cursor-pointer transition-all',
-                'hover:bg-white/3'
-              )}
-            >
-              {/* Colour dot — trending papers get a pulsing indicator */}
-              <div className="shrink-0 mt-1.5">
-                {isTrending
-                  ? <span className={cn('block w-2 h-2 rounded-full animate-pulse', c.dot)} />
-                  : <span className="block w-2 h-2 rounded-full bg-white/10" />
-                }
-              </div>
-
-              {/* Hook text */}
-              <div className="flex-1 min-w-0">
-                <p className={cn(
-                  'text-sm text-white/80 leading-snug transition-colors',
-                  c.hookHover, 'group-hover:text-white'
-                )}>
-                  {truncate(hook, 130)}
-                </p>
-
-                {/* Social micro-proof — only when non-zero, very subtle */}
-                {(hf > 0 || hn > 0) && (
-                  <div className="flex items-center gap-2 mt-1">
-                    {hf > 0 && <span className="text-[10px] text-orange-400/50">🤗 {hf > 999 ? `${(hf/1000).toFixed(1)}k` : hf}</span>}
-                    {hn > 0 && <span className="text-[10px] text-amber-400/50">🟠 {hn}</span>}
-                  </div>
-                )}
-              </div>
-
-              <ArrowRight size={12} className="shrink-0 mt-1 text-white/10 group-hover:text-white/40 transition-colors" />
-            </div>
-          )
-        })}
-      </div>
-
-      {/* Footer — see all */}
-      <button
-        onClick={onTopicClick}
-        className={cn(
-          'flex items-center justify-center gap-1.5 px-5 py-3 text-xs font-medium transition-all border-t border-white/5',
-          'text-muted/60 hover:text-white hover:bg-white/3'
-        )}
-      >
-        See all {cat.paper_count} {cat.label} papers <ArrowRight size={10} />
-      </button>
-    </motion.div>
-  )
-}
-
-// ── SEARCH BAR ────────────────────────────────────────────────────────────────
+// ── Search bar ────────────────────────────────────────────────────────────────
 function SearchBar({ onSearch }: { onSearch: (q: string) => void }) {
   const [q, setQ] = useState('')
-  const submit = (e: React.FormEvent) => { e.preventDefault(); if (q.trim()) onSearch(q.trim()) }
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (q.trim()) onSearch(q.trim())
+  }
   return (
     <form onSubmit={submit} className="relative max-w-xl mx-auto">
-      <Search size={15} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted/60 pointer-events-none" />
+      <Search size={15} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted/50 pointer-events-none" />
       <input
         value={q}
         onChange={e => setQ(e.target.value)}
-        placeholder='Try: "AI detects cancer" or "faster chatbots" or "robots learning"'
-        className="w-full pl-10 pr-24 py-3 bg-surface border border-accent/20 rounded-2xl text-sm text-white placeholder:text-muted/40 focus:outline-none focus:border-accent/50 transition-colors"
+        placeholder='Ask anything — "AI and cancer" · "faster phones" · "climate predictions"'
+        className="w-full pl-11 pr-24 py-3.5 bg-surface border border-accent/20 rounded-2xl text-sm text-white placeholder:text-muted/40 focus:outline-none focus:border-accent/50 transition-colors"
       />
       <button
         type="submit"
-        className="absolute right-1.5 top-1/2 -translate-y-1/2 px-4 py-1.5 bg-accent text-background text-xs font-bold rounded-xl hover:bg-accent/90 transition-colors"
+        className="absolute right-1.5 top-1/2 -translate-y-1/2 px-4 py-2 bg-accent text-background text-xs font-bold rounded-xl hover:bg-accent/90 transition-colors"
       >
         Search
       </button>
@@ -273,7 +187,7 @@ function SearchBar({ onSearch }: { onSearch: (q: string) => void }) {
   )
 }
 
-// ── MAIN PAGE ─────────────────────────────────────────────────────────────────
+// ── Main component ────────────────────────────────────────────────────────────
 export function LandingPage() {
   const navigate = useNavigate()
   const [data, setData] = useState<LandingData | null>(null)
@@ -282,112 +196,111 @@ export function LandingPage() {
 
   useEffect(() => {
     landingApi.getLanding()
-      .then(r => setData(r.data))
+      .then(r => {
+        // Attach topic_hook from topic_meta back to each category for the card
+        const d = r.data as LandingData & { topic_meta?: Record<string, any> }
+        if (d.topic_meta && d.categories) {
+          d.categories = d.categories.map(cat => ({
+            ...cat,
+            topic_hook: (d.topic_meta as any)[cat.topic]?.hook || cat.tagline,
+          }))
+        }
+        setData(d)
+      })
       .catch(() => setError(true))
       .finally(() => setLoading(false))
   }, [])
 
-  const goReport  = (p: LandingPaper)  => navigate(`/report/${p.id}`)
-  const goTopic   = (topic: string)    => navigate(`/explore/${topic}`)
-  const goSearch  = (q: string)        => navigate(`/search?q=${encodeURIComponent(q)}`)
+  const retry = () => {
+    setError(false)
+    setLoading(true)
+    landingApi.getLanding().then(r => setData(r.data)).catch(() => setError(true)).finally(() => setLoading(false))
+  }
 
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
 
-      {/* Page header */}
-      <div className="border-b border-accent/10">
-        <div className="max-w-6xl mx-auto px-4 py-10 space-y-5 text-center">
-          <motion.div initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.45 }}>
-            <p className="text-[11px] font-bold tracking-[0.3em] text-accent/60 uppercase mb-3">
-              AI Research · Explained Simply
+      {/* ── Masthead ── */}
+      <div className="border-b border-accent/10 bg-gradient-to-b from-accent/3 to-transparent">
+        <div className="max-w-5xl mx-auto px-4 py-12 text-center space-y-5">
+          <motion.div initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
+            <p className="text-[10px] font-black tracking-[0.35em] text-accent/55 uppercase mb-3">
+              AI Research · Explained For Everyone
             </p>
-            <h1 className="text-4xl md:text-5xl font-extrabold text-white leading-tight tracking-tight">
-              What happened in AI today
+            <h1 className="text-4xl md:text-[3.2rem] font-extrabold text-white leading-tight tracking-tight">
+              The biggest ideas in AI,<br />
+              <span className="text-accent">in plain English</span>
             </h1>
-            <p className="text-muted text-base mt-3 max-w-lg mx-auto">
-              The most important ideas from AI research — explained in plain English, no PhD required.
+            <p className="text-muted text-base mt-3 max-w-lg mx-auto leading-relaxed">
+              Every day, thousands of AI research papers are published.
+              We read them so you don't have to — and we tell you what actually matters.
             </p>
           </motion.div>
 
           <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2, duration: 0.4 }}>
-            <SearchBar onSearch={goSearch} />
-          </motion.div>
-
-          {/* Quick-nav pills */}
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.35 }}
-            className="flex flex-wrap justify-center gap-2"
-          >
-            {[
-              { icon: Flame,       label: 'Trending',   path: '/papers/trending' },
-              { icon: TrendingUp,  label: 'Rising Fast', path: '/papers/rising'  },
-              { icon: Zap,         label: 'Just Added',  path: '/papers/new'     },
-              { icon: LayoutGrid,  label: 'Researcher Dashboard', path: '/dashboard' },
-            ].map(({ icon: Icon, label, path }) => (
-              <button key={label} onClick={() => navigate(path)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs text-muted border border-accent/15 hover:border-accent/40 hover:text-white transition-all bg-surface/50"
-              >
-                <Icon size={10} /> {label}
-              </button>
-            ))}
+            <SearchBar onSearch={q => navigate(`/search?q=${encodeURIComponent(q)}`)} />
           </motion.div>
         </div>
       </div>
 
-      {/* Content */}
-      <main className="max-w-6xl mx-auto px-4 py-10 space-y-12">
+      {/* ── Content ── */}
+      <main className="max-w-5xl mx-auto px-4 py-10 space-y-14">
         {loading ? (
-          <div className="flex flex-col items-center py-24 gap-3 text-muted">
+          <div className="flex flex-col items-center py-28 gap-3 text-muted">
             <Loader2 size={26} className="animate-spin text-accent" />
-            <p className="text-sm">Loading today's research…</p>
+            <p className="text-sm">Loading today's stories…</p>
           </div>
         ) : error ? (
-          <div className="flex flex-col items-center py-24 gap-3">
-            <p className="text-white font-semibold">Couldn't load the feed</p>
-            <button onClick={() => { setError(false); setLoading(true); landingApi.getLanding().then(r => setData(r.data)).catch(() => setError(true)).finally(() => setLoading(false)) }}
-              className="text-xs text-accent hover:underline"
-            >Retry</button>
+          <div className="flex flex-col items-center py-28 gap-4">
+            <p className="text-white font-semibold">Couldn't load stories</p>
+            <button onClick={retry} className="text-xs text-accent hover:underline">Retry</button>
           </div>
         ) : !data ? null : (
           <>
-            {/* Hero */}
-            {data.hero && <Hero paper={data.hero} onRead={() => goReport(data.hero!)} />}
-
-            {/* Breaking — community hot papers */}
-            {data.breaking.length > 0 && (
-              <BreakingStrip papers={data.breaking} onSelect={goReport} />
+            {/* Hero story */}
+            {data.hero && (
+              <HeroHook
+                data={data}
+                onRead={() => navigate(`/report/${data.hero!.id}`)}
+              />
             )}
 
-            {/* Topic categories */}
+            {/* Topic grid — each card is ONE journalist hook, nothing else */}
             {data.categories.length > 0 ? (
               <section>
-                <div className="mb-6">
-                  <h2 className="text-xl font-bold text-white">Browse by Topic</h2>
-                  <p className="text-sm text-muted mt-1">
-                    Pick what you're curious about — each card shows the most interesting hooks from that area
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 0.25 }}
+                  className="mb-8 text-center space-y-1"
+                >
+                  <h2 className="text-2xl font-bold text-white">What's the world of AI working on?</h2>
+                  <p className="text-sm text-muted">
+                    Pick a topic that interests you — no technical knowledge required
                   </p>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+                </motion.div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
                   {data.categories.map((cat, i) => (
                     <TopicCard
                       key={cat.topic}
                       cat={cat}
-                      delay={Math.min(i * 0.07, 0.5)}
-                      onTopicClick={() => goTopic(cat.topic)}
-                      onPaperClick={goReport}
+                      index={i}
+                      onClick={() => navigate(`/explore/${cat.topic}`)}
                     />
                   ))}
                 </div>
               </section>
             ) : (
-              /* Empty state — no categories yet */
               <div className="flex flex-col items-center py-16 gap-4 text-center border border-dashed border-accent/20 rounded-2xl">
-                <span className="text-4xl">🔬</span>
-                <p className="text-white font-semibold">Papers are loading in…</p>
+                <span className="text-5xl">🔬</span>
+                <p className="text-white font-semibold text-lg">Stories are loading in…</p>
                 <p className="text-muted text-sm max-w-sm">
-                  Content is being prepared. Try browsing the trending feed while you wait.
+                  Try browsing the trending research feed while content warms up.
                 </p>
-                <button onClick={() => navigate('/papers/trending')}
+                <button
+                  onClick={() => navigate('/papers/trending')}
                   className="px-5 py-2 bg-accent text-background rounded-xl text-sm font-semibold hover:bg-accent/90 transition-all"
                 >
                   See Trending Papers →
@@ -395,13 +308,14 @@ export function LandingPage() {
               </div>
             )}
 
-            {/* Footer nudge to researcher view */}
-            <div className="flex items-center justify-center pt-2 border-t border-accent/10 pb-4">
-              <button onClick={() => navigate('/dashboard')}
-                className="flex items-center gap-2 text-xs text-muted hover:text-white transition-colors"
+            {/* Footer nudge for researchers */}
+            <div className="flex items-center justify-center gap-2 pt-2 pb-6 border-t border-accent/10 text-xs text-muted">
+              <button
+                onClick={() => navigate('/dashboard')}
+                className="flex items-center gap-1.5 hover:text-white transition-colors"
               >
                 <LayoutGrid size={11} />
-                Switch to the full researcher dashboard with scores, analytics and filters
+                Researcher? Switch to the full technical dashboard
                 <ArrowRight size={11} />
               </button>
             </div>

@@ -505,6 +505,132 @@ Respond with ONLY the subheading."""
         "Safety", "Science", "Efficiency", "Business", "Climate", "General"
     ]
 
+    async def generate_topic_group_hook(
+        self,
+        topic_label: str,
+        topic_tagline: str,
+        paper_hooks: list,
+    ) -> str:
+        """
+        Generate a compelling journalist-style narrative hook for an entire topic GROUP.
+        This is shown on the landing page to represent the whole topic — not any single paper.
+        Reads like an opening paragraph from a great magazine article.
+        Falls back to static hook if AI unavailable.
+        """
+        if not self._api_key or not paper_hooks:
+            return ""
+
+        sample = "\n".join(f"- {h}" for h in paper_hooks[:5] if h)
+
+        prompt = f"""You are a senior journalist at a magazine like The Atlantic or Wired, writing a
+single-sentence OPENING HOOK that draws curious non-technical readers into a story about AI research.
+
+The story is about this topic area: {topic_label}
+({topic_tagline})
+
+Here are some of the actual research papers in this area this week:
+{sample}
+
+Your job: write ONE sentence (25–40 words) that:
+- Feels like the opening of an investigative magazine article
+- Makes a curious non-technical adult HAVE to keep reading
+- Does NOT mention any specific paper, author, or technical term
+- Captures the BIGGER HUMAN STORY behind this research area
+- Has a sense of scale, consequence, or mystery
+- Uses plain language — no jargon, no acronyms
+
+Strong examples of the style:
+"Hidden inside thousands of research papers lies a simple question that has stumped scientists for fifty years — and AI is now giving us the clearest answer we have ever had."
+"The same AI powering your phone's autocorrect is being quietly trained on millions of patient records, and it just found drug combinations that doctors missed for decades."
+"The people building the most powerful AI systems in human history are also the ones most publicly worried about what happens if they succeed."
+"Right now, thousands of engineers are in a race to build a machine that reads, writes, and reasons better than any human — and the latest research shows they are dangerously close."
+
+Write ONLY the one sentence hook. No quotes around it. No explanation."""
+
+        try:
+            async with httpx.AsyncClient(timeout=20) as client:
+                resp = await client.post(
+                    f"{self.base_url}/chat/completions",
+                    headers={"Authorization": f"Bearer {self._api_key}", "Content-Type": "application/json"},
+                    json={
+                        "model": self.model,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "max_tokens": 100,
+                        "temperature": 0.85,
+                    }
+                )
+                if resp.status_code == 200:
+                    text = resp.json()["choices"][0]["message"]["content"].strip().strip('"\'').rstrip('.')
+                    if text and len(text) > 40:
+                        return text + "."
+        except Exception as e:
+            logger.warning(f"Topic group hook error ({topic_label}): {e}")
+
+        return ""
+
+    async def generate_journalist_paper_hook(
+        self,
+        title: str,
+        abstract: str,
+        ai_summary: str = "",
+        topic_label: str = "",
+    ) -> str:
+        """
+        Generate a journalist-style hook for a single paper — shown on the Topic page.
+        Unlike hook_text (punchy 5-10 word headline), this is a full sentence that tells
+        a non-technical reader WHY this specific paper matters, written like a journalist.
+        Falls back to hook_text or title if AI unavailable.
+        """
+        if not self._api_key:
+            return ""
+
+        source = ai_summary or abstract or ""
+        if not source:
+            return ""
+
+        prompt = f"""You are a journalist explaining a research paper to a curious adult who reads The Economist.
+Write ONE sentence (20–35 words) that explains what this paper discovered and why a normal person should care.
+
+Topic area: {topic_label}
+Paper title: {title[:180]}
+What the paper says: {source[:500]}
+
+Rules:
+- ONE sentence, 20–35 words
+- No technical jargon or acronyms — if you must use one, explain it in plain words
+- Start with what changed, what was found, or what is now possible — not "Researchers found"
+- Make a normal person feel curious, not overwhelmed
+- Do NOT start with "This paper", "Researchers", "Scientists", "A new study"
+- Write as if you are telling a smart friend about something you just read
+
+Good examples:
+"For the first time, a machine can read your medical scan and spot early signs of cancer that a trained doctor would miss on the first pass."
+"The software that translates between languages just got dramatically better at understanding sarcasm, jokes, and the kind of thing people mean but never actually say."
+"A cheap, open-source model is now doing things that used to require a supercomputer — and anyone can download it for free."
+
+Write ONLY the single sentence. No quotes. No labels."""
+
+        try:
+            async with httpx.AsyncClient(timeout=20) as client:
+                resp = await client.post(
+                    f"{self.base_url}/chat/completions",
+                    headers={"Authorization": f"Bearer {self._api_key}", "Content-Type": "application/json"},
+                    json={
+                        "model": self.model,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "max_tokens": 80,
+                        "temperature": 0.75,
+                    }
+                )
+                if resp.status_code == 200:
+                    text = resp.json()["choices"][0]["message"]["content"].strip().strip('"\'')
+                    if text and len(text) > 30:
+                        return text if text.endswith('.') else text + '.'
+        except Exception as e:
+            logger.warning(f"Journalist paper hook error: {e}")
+
+        return ""
+
     async def generate_topic_category(
         self, title: str, abstract: str, arxiv_categories: list
     ) -> str:

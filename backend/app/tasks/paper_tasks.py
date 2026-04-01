@@ -763,15 +763,14 @@ async def process_single_paper(arxiv_id: str):
 
 async def generate_landing_content(batch_size: int = 100, force: bool = False) -> int:
     """
-    Generate public-facing landing content for non-technical readers:
-    - ai_topic_category: one of 10 human topics (Language, Vision, Health…)
-    - ai_lay_summary: 3-4 plain-English sentences anyone can understand
-    - ai_why_important: 1-2 sentences explaining WHY this paper is featured
-    - ai_key_findings: JSON array of 3-4 specific bullet-point findings
-
-    Called by admin trigger or scheduled task.
-    Only processes papers that have ai_summary or abstract available.
-    With force=True, regenerates all papers (useful for backfill).
+    Generate public-facing landing content for non-technical readers.
+    Per paper:
+      - ai_topic_category: one of 10 human topics (Language, Vision, Health…)
+      - ai_journalist_hook: magazine-style sentence for the Topic page ("For the first time…")
+      - ai_lay_summary: 3-4 plain-English sentences
+      - ai_why_important: 1-2 sentences on community proof
+      - ai_key_findings: JSON array of 3-4 specific bullet findings
+    With force=True, regenerates all papers (backfill).
     """
     if force:
         condition = "is_deleted = 0 AND is_duplicate = 0"
@@ -779,12 +778,12 @@ async def generate_landing_content(batch_size: int = 100, force: bool = False) -
     else:
         condition = (
             "is_deleted = 0 AND is_duplicate = 0 "
-            "AND (ai_topic_category IS NULL OR ai_lay_summary IS NULL)"
+            "AND (ai_topic_category IS NULL OR ai_journalist_hook IS NULL OR ai_lay_summary IS NULL)"
         )
 
     rows = await turso_db.fetchall(
         f"SELECT rowid as id, title, abstract, ai_summary, ai_topic_tags, "
-        f"categories, trend_label, hf_upvotes, hn_points, hn_comments, "
+        f"categories, primary_category, trend_label, hf_upvotes, hn_points, hn_comments, "
         f"citation_count, github_stars "
         f"FROM papers WHERE {condition} "
         f"AND (abstract IS NOT NULL OR ai_summary IS NOT NULL) "
@@ -801,6 +800,9 @@ async def generate_landing_content(batch_size: int = 100, force: bool = False) -
     semaphore = asyncio.Semaphore(4)
     processed = 0
 
+    # Import topic meta for journalist hook generation
+    from app.api.feed import _TOPIC_META
+
     async def _generate_one(p: dict):
         nonlocal processed
         async with semaphore:
@@ -816,19 +818,27 @@ async def generate_landing_content(batch_size: int = 100, force: bool = False) -
                 citation_count = int(p.get("citation_count") or 0)
                 github_stars = int(p.get("github_stars") or 0)
 
-                # Run topic classification, lay summary, and key findings in parallel
+                # Run topic classification + lay summary + key findings in parallel
                 topic, lay_summary, key_findings = await asyncio.gather(
                     ai_svc.generate_topic_category(title, abstract, categories),
                     ai_svc.generate_lay_summary(title, abstract, ai_summary),
                     ai_svc.generate_key_findings(title, abstract, ai_summary),
                     return_exceptions=True,
                 )
-
                 topic = topic if isinstance(topic, str) else "General"
                 lay_summary = lay_summary if isinstance(lay_summary, str) else ""
                 key_findings = key_findings if isinstance(key_findings, list) else []
 
-                # Why important uses topic + social signals
+                # Journalist hook for Topic page (shown instead of paper title)
+                topic_meta = _TOPIC_META.get(topic, {})
+                journalist_hook = await ai_svc.generate_journalist_paper_hook(
+                    title=title,
+                    abstract=abstract,
+                    ai_summary=ai_summary,
+                    topic_label=topic_meta.get("label", topic),
+                )
+
+                # Why important — uses social signals
                 why_important = await ai_svc.generate_why_important(
                     title=title,
                     trend_label=trend_label_val,
@@ -841,10 +851,11 @@ async def generate_landing_content(batch_size: int = 100, force: bool = False) -
                 )
 
                 await turso_db.execute(
-                    "UPDATE papers SET ai_topic_category=?, ai_lay_summary=?, "
-                    "ai_why_important=?, ai_key_findings=? WHERE rowid=?",
+                    "UPDATE papers SET ai_topic_category=?, ai_journalist_hook=?, "
+                    "ai_lay_summary=?, ai_why_important=?, ai_key_findings=? WHERE rowid=?",
                     [
                         topic,
+                        journalist_hook,
                         lay_summary,
                         why_important,
                         json.dumps(key_findings),
