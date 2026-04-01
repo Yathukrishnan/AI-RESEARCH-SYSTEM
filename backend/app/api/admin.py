@@ -344,6 +344,18 @@ async def trigger_rich_hooks(
     return {"status": "started", "batch_size": batch, "force": force}
 
 
+@router.get("/rich-hooks-progress")
+async def get_rich_hooks_progress(_: dict = Depends(require_admin)):
+    """Live progress of the currently-running (or last completed) rich hook job."""
+    from app.tasks.paper_tasks import rich_hooks_progress
+    p = rich_hooks_progress
+    total = p["total"] or 1
+    return {
+        **p,
+        "percent": round(p["done"] / total * 100) if p["total"] > 0 else 0,
+    }
+
+
 @router.get("/rich-hooks-status")
 async def get_rich_hooks_status(db: TursoClient = Depends(get_db), _: dict = Depends(require_admin)):
     """How many papers have rich journalist hooks vs still needing them."""

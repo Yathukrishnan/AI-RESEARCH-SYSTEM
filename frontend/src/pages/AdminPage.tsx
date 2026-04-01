@@ -553,6 +553,8 @@ function AnalysisAdmin() {
   const [running, setRunning] = useState(false)
   const [polling, setPolling] = useState(false)
   const [hooksStatus, setHooksStatus] = useState<{ total: number; with_rich_hooks: number; missing_hooks: number; percent: number } | null>(null)
+  const [hooksProgress, setHooksProgress] = useState<{ status: string; total: number; done: number; failed: number; percent: number; started_at: string | null; finished_at: string | null } | null>(null)
+  const [hooksPolling, setHooksPolling] = useState(false)
 
   const loadHooksStatus = () => {
     adminApi.getRichHooksStatus()
@@ -560,8 +562,29 @@ function AnalysisAdmin() {
       .catch(() => {})
   }
 
+  const loadHooksProgress = () => {
+    adminApi.getRichHooksProgress()
+      .then(r => {
+        setHooksProgress(r.data)
+        if (r.data.status === 'running') setHooksPolling(true)
+        else setHooksPolling(false)
+      })
+      .catch(() => {})
+  }
+
+  useEffect(() => {
+    if (!hooksPolling) return
+    const t = setInterval(() => {
+      loadHooksProgress()
+      // Refresh coverage stats every 10s while running
+      loadHooksStatus()
+    }, 3000)
+    return () => clearInterval(t)
+  }, [hooksPolling])
+
   const load = () => {
     loadHooksStatus()
+    loadHooksProgress()
     adminApi.getAnalysisStatus()
       .then((r) => {
         setLog(r.data.latest_run || null)
@@ -674,8 +697,8 @@ function AnalysisAdmin() {
             <span className="text-white font-semibold">Rich Journalist Hooks</span> — generates magazine-style 4-6 sentence hooks for the Topic &amp; Report pages. Run after adding new papers.
           </p>
 
-          {/* Progress bar */}
-          {hooksStatus && (
+          {/* Coverage stats (idle/done state) */}
+          {hooksStatus && hooksProgress?.status !== 'running' && (
             <div className="mb-4 space-y-2 bg-surface-2 rounded-xl p-4">
               <div className="flex items-center justify-between text-xs">
                 <span className="font-semibold text-white">Rich hooks coverage</span>
@@ -702,21 +725,58 @@ function AnalysisAdmin() {
             </div>
           )}
 
+          {/* Live progress — shown while job is running */}
+          {hooksProgress && hooksProgress.status === 'running' && (
+            <div className="mb-4 space-y-3 bg-teal-500/5 border border-teal-500/20 rounded-xl p-4">
+              <div className="flex items-center gap-2">
+                <Loader2 size={13} className="animate-spin text-teal-400" />
+                <span className="text-sm font-semibold text-white">Generating rich hooks…</span>
+                <span className="ml-auto text-xs text-teal-400 font-bold tabular-nums">{hooksProgress.percent}%</span>
+              </div>
+              <div className="w-full h-3 bg-surface rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-teal-500 rounded-full transition-all duration-700"
+                  style={{ width: `${hooksProgress.percent}%` }}
+                />
+              </div>
+              <div className="flex items-center justify-between text-xs text-muted">
+                <span>
+                  <span className="text-green-400 font-semibold">{hooksProgress.done.toLocaleString()} done</span>
+                  {hooksProgress.failed > 0 && <span className="text-red-400 ml-2">{hooksProgress.failed} failed</span>}
+                  <span className="ml-2">of {hooksProgress.total.toLocaleString()} papers</span>
+                </span>
+                <span>{hooksProgress.total - hooksProgress.done - hooksProgress.failed} remaining</span>
+              </div>
+            </div>
+          )}
+
+          {/* Last run summary — shown after completion */}
+          {hooksProgress && hooksProgress.status === 'done' && hooksProgress.total > 0 && (
+            <div className="mb-4 bg-green-500/5 border border-green-500/20 rounded-xl p-4 space-y-1">
+              <p className="text-sm font-semibold text-green-400">✅ Job complete</p>
+              <p className="text-xs text-muted">
+                {hooksProgress.done.toLocaleString()} hooks generated
+                {hooksProgress.failed > 0 && `, ${hooksProgress.failed} failed`}
+                {' '}out of {hooksProgress.total.toLocaleString()} papers
+              </p>
+            </div>
+          )}
+
           <div className="flex flex-wrap gap-3">
             <button
-              onClick={() => { generateRichHooks(false); setTimeout(loadHooksStatus, 3000) }}
-              disabled={running}
+              onClick={() => { generateRichHooks(false); setTimeout(() => { loadHooksProgress(); setHooksPolling(true) }, 1500) }}
+              disabled={running || hooksProgress?.status === 'running'}
               className="flex items-center gap-2 px-4 py-2 bg-teal-500/10 border border-teal-500/30 text-teal-400 text-sm font-medium rounded-xl hover:bg-teal-500/20 disabled:opacity-50 transition-all"
             >
-              {running ? <Loader2 size={14} className="animate-spin" /> : <span>📰</span>}
+              {hooksProgress?.status === 'running' ? <Loader2 size={14} className="animate-spin" /> : <span>📰</span>}
               Fill Missing Rich Hooks
             </button>
             <button
-              onClick={() => { generateRichHooks(true); setTimeout(loadHooksStatus, 3000) }}
-              disabled={running}
+              onClick={() => { generateRichHooks(true); setTimeout(() => { loadHooksProgress(); setHooksPolling(true) }, 1500) }}
+              disabled={running || hooksProgress?.status === 'running'}
               className="flex items-center gap-2 px-4 py-2 bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-sm font-medium rounded-xl hover:bg-cyan-500/20 disabled:opacity-50 transition-all"
             >
-              {running ? <Loader2 size={14} className="animate-spin" /> : <span>↺</span>}
+              {hooksProgress?.status === 'running' ? <Loader2 size={14} className="animate-spin" /> : <span>↺</span>}
               Regenerate ALL Rich Hooks
             </button>
           </div>

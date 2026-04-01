@@ -872,9 +872,22 @@ async def generate_landing_content(batch_size: int = 100, force: bool = False) -
     return processed
 
 
+# ── Live progress tracker for rich hook generation ────────────────────────────
+# Simple in-memory dict — safe for single-instance Render deployment.
+# Reset on each new run. Polled by GET /admin/rich-hooks-progress.
+rich_hooks_progress: dict = {
+    "status": "idle",       # idle | running | done | error
+    "total": 0,
+    "done": 0,
+    "failed": 0,
+    "started_at": None,
+    "finished_at": None,
+}
+
+
 async def generate_rich_journalist_hooks(batch_size: int = 2000, force: bool = False) -> int:
     """
-    Generate rich Wired/Atlantic-style journalist hooks (4-6 sentences, ~150-250 words)
+    Generate rich Wired/Atlantic-style journalist hooks (5-7 sentences, 200-350 words)
     for all public-facing papers and save to ai_journalist_hook column.
 
     These are the hooks shown on the Topic page and Report page.
@@ -882,6 +895,7 @@ async def generate_rich_journalist_hooks(batch_size: int = 2000, force: bool = F
     force=False: only fill papers missing a rich hook (< 800 chars).
     """
     from app.api.feed import _TOPIC_META, _derive_topic
+    from datetime import datetime
 
     if force:
         condition = (
@@ -905,15 +919,27 @@ async def generate_rich_journalist_hooks(batch_size: int = 2000, force: bool = F
     )
     if not rows:
         logger.info("Rich hooks: no papers to process")
+        rich_hooks_progress.update({"status": "done", "total": 0, "done": 0, "failed": 0,
+                                    "finished_at": datetime.utcnow().isoformat()})
         return 0
 
-    logger.info(f"Rich hooks: generating for {len(rows)} papers…")
+    total = len(rows)
+    logger.info(f"Rich hooks: generating for {total} papers…")
+
+    # Reset progress tracker for this run
+    rich_hooks_progress.update({
+        "status": "running",
+        "total": total,
+        "done": 0,
+        "failed": 0,
+        "started_at": datetime.utcnow().isoformat(),
+        "finished_at": None,
+    })
+
     ai_svc = AIValidationService(settings.OPENROUTER_API_KEY)
     semaphore = asyncio.Semaphore(3)
-    processed = 0
 
     async def _gen_rich(p: dict):
-        nonlocal processed
         async with semaphore:
             try:
                 categories = json.loads(p.get("categories") or "[]")
@@ -940,13 +966,25 @@ async def generate_rich_journalist_hooks(batch_size: int = 2000, force: bool = F
                         "UPDATE papers SET ai_journalist_hook=? WHERE rowid=?",
                         [hook, p["id"]]
                     )
-                    processed += 1
+                    rich_hooks_progress["done"] += 1
                     logger.debug(f"Rich hook OK: paper {p['id']} ({len(hook)} chars)")
                 else:
+                    rich_hooks_progress["failed"] += 1
                     logger.debug(f"Rich hook too short for paper {p['id']}: {len(hook or '')} chars")
             except Exception as e:
+                rich_hooks_progress["failed"] += 1
                 logger.error(f"Rich hook error paper {p.get('id')}: {e}")
 
-    await asyncio.gather(*[_gen_rich(p) for p in rows], return_exceptions=True)
-    logger.info(f"Rich hooks: done — {processed}/{len(rows)} hooks generated")
+    try:
+        await asyncio.gather(*[_gen_rich(p) for p in rows], return_exceptions=True)
+        rich_hooks_progress.update({
+            "status": "done",
+            "finished_at": datetime.utcnow().isoformat(),
+        })
+    except Exception as e:
+        rich_hooks_progress.update({"status": "error", "finished_at": datetime.utcnow().isoformat()})
+        logger.error(f"Rich hooks gather error: {e}")
+
+    processed = rich_hooks_progress["done"]
+    logger.info(f"Rich hooks: done — {processed}/{total} hooks generated")
     return processed
