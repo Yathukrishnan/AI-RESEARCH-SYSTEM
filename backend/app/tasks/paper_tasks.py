@@ -870,3 +870,83 @@ async def generate_landing_content(batch_size: int = 100, force: bool = False) -
     await asyncio.gather(*[_generate_one(p) for p in rows], return_exceptions=True)
     logger.info(f"Landing content: done — {processed}/{len(rows)} papers processed")
     return processed
+
+
+async def generate_rich_journalist_hooks(batch_size: int = 200, force: bool = False) -> int:
+    """
+    Generate rich Wired/Atlantic-style journalist hooks (4-6 sentences, ~150-250 words)
+    for all public-facing papers and save to ai_journalist_hook column.
+
+    These are the hooks shown on the Topic page and Report page.
+    force=True: overwrite all existing hooks (backfill / style refresh).
+    force=False: only fill papers missing a rich hook (< 500 chars).
+    """
+    from app.api.feed import _TOPIC_META, _derive_topic
+
+    if force:
+        condition = (
+            "is_deleted = 0 AND is_duplicate = 0 "
+            "AND (abstract IS NOT NULL OR ai_summary IS NOT NULL)"
+        )
+        logger.info("Rich hooks: force=True, regenerating all papers…")
+    else:
+        condition = (
+            "is_deleted = 0 AND is_duplicate = 0 "
+            "AND (ai_journalist_hook IS NULL OR LENGTH(ai_journalist_hook) < 500) "
+            "AND (abstract IS NOT NULL OR ai_summary IS NOT NULL)"
+        )
+
+    rows = await turso_db.fetchall(
+        f"SELECT rowid as id, title, abstract, ai_summary, categories, "
+        f"primary_category, hf_upvotes, hn_points, citation_count, github_stars, h_index_max "
+        f"FROM papers WHERE {condition} "
+        f"ORDER BY normalized_score DESC LIMIT ?",
+        [batch_size]
+    )
+    if not rows:
+        logger.info("Rich hooks: no papers to process")
+        return 0
+
+    logger.info(f"Rich hooks: generating for {len(rows)} papers…")
+    ai_svc = AIValidationService(settings.OPENROUTER_API_KEY)
+    semaphore = asyncio.Semaphore(3)
+    processed = 0
+
+    async def _gen_rich(p: dict):
+        nonlocal processed
+        async with semaphore:
+            try:
+                categories = json.loads(p.get("categories") or "[]")
+                primary = p.get("primary_category") or (categories[0] if categories else "")
+                topic = _derive_topic(primary, categories)
+                topic_label = _TOPIC_META.get(topic, {}).get("label", "AI Research")
+
+                hook = await asyncio.wait_for(
+                    ai_svc.generate_report_hook(
+                        title=p.get("title", ""),
+                        abstract=p.get("abstract") or p.get("ai_summary") or "",
+                        ai_summary=p.get("ai_summary") or "",
+                        topic_label=topic_label,
+                        hf_upvotes=int(p.get("hf_upvotes") or 0),
+                        hn_points=int(p.get("hn_points") or 0),
+                        citation_count=int(p.get("citation_count") or 0),
+                        github_stars=int(p.get("github_stars") or 0),
+                        h_index=float(p.get("h_index_max") or 0),
+                    ),
+                    timeout=30.0
+                )
+                if hook and len(hook) >= 500:
+                    await turso_db.execute(
+                        "UPDATE papers SET ai_journalist_hook=? WHERE rowid=?",
+                        [hook, p["id"]]
+                    )
+                    processed += 1
+                    logger.debug(f"Rich hook OK: paper {p['id']} ({len(hook)} chars)")
+                else:
+                    logger.debug(f"Rich hook too short for paper {p['id']}: {len(hook or '')} chars")
+            except Exception as e:
+                logger.error(f"Rich hook error paper {p.get('id')}: {e}")
+
+    await asyncio.gather(*[_gen_rich(p) for p in rows], return_exceptions=True)
+    logger.info(f"Rich hooks: done — {processed}/{len(rows)} hooks generated")
+    return processed

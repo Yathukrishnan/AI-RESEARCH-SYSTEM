@@ -318,6 +318,24 @@ async def trigger_landing_content(
     return {"status": "started", "batch_size": batch, "force": force}
 
 
+@router.post("/trigger-rich-hooks")
+async def trigger_rich_hooks(
+    batch: int = 200,
+    force: bool = False,
+    background_tasks: BackgroundTasks = None,
+    _: dict = Depends(require_admin),
+):
+    """
+    Generate rich Wired/Atlantic-style journalist hooks (4-6 sentences, 150-250 words)
+    for all papers missing one. These are shown on the Topic page and Report page.
+    force=true regenerates all existing hooks (style refresh / backfill).
+    """
+    from app.tasks.paper_tasks import generate_rich_journalist_hooks
+    batch = min(max(batch, 1), 500)
+    background_tasks.add_task(generate_rich_journalist_hooks, batch, force)
+    return {"status": "started", "batch_size": batch, "force": force}
+
+
 @router.get("/daily-fetch")
 async def daily_fetch_status(db: TursoClient = Depends(get_db), _: dict = Depends(require_admin)):
     """Return today's fetch log and the list of papers fetched today."""

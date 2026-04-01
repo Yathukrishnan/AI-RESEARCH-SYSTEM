@@ -597,6 +597,18 @@ function AnalysisAdmin() {
     }
   }
 
+  const generateRichHooks = async (force: boolean) => {
+    setRunning(true)
+    try {
+      await adminApi.triggerRichHooks(200, force)
+      toast.success(force ? 'Regenerating ALL rich journalist hooks (200 papers)…' : 'Filling missing rich hooks (200 papers)…')
+    } catch {
+      toast.error('Failed to start rich hook generation')
+    } finally {
+      setRunning(false)
+    }
+  }
+
   const statusColor = (s?: string) => {
     if (s === 'complete') return 'text-success'
     if (s === 'running') return 'text-accent-2'
@@ -645,6 +657,31 @@ function AnalysisAdmin() {
             {running ? <Loader2 size={14} className="animate-spin" /> : <span>↺</span>}
             Regenerate ALL Hooks
           </button>
+        </div>
+
+        {/* Rich journalist hooks — Wired/Atlantic style, 4-6 sentences */}
+        <div className="pt-3 border-t border-white/5">
+          <p className="text-xs text-muted mb-3">
+            <span className="text-white font-semibold">Rich Journalist Hooks</span> — generates magazine-style 4-6 sentence hooks for the Topic &amp; Report pages. Run after adding new papers.
+          </p>
+          <div className="flex flex-wrap gap-3">
+            <button
+              onClick={() => generateRichHooks(false)}
+              disabled={running}
+              className="flex items-center gap-2 px-4 py-2 bg-teal-500/10 border border-teal-500/30 text-teal-400 text-sm font-medium rounded-xl hover:bg-teal-500/20 disabled:opacity-50 transition-all"
+            >
+              {running ? <Loader2 size={14} className="animate-spin" /> : <span>📰</span>}
+              Fill Missing Rich Hooks
+            </button>
+            <button
+              onClick={() => generateRichHooks(true)}
+              disabled={running}
+              className="flex items-center gap-2 px-4 py-2 bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-sm font-medium rounded-xl hover:bg-cyan-500/20 disabled:opacity-50 transition-all"
+            >
+              {running ? <Loader2 size={14} className="animate-spin" /> : <span>↺</span>}
+              Regenerate ALL Rich Hooks
+            </button>
+          </div>
         </div>
       </div>
 

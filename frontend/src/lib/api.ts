@@ -108,6 +108,8 @@ export const adminApi = {
   getServiceConfig: () => api.get('/admin/service-config'),
   triggerLandingContent: (batch = 100, force = false) =>
     api.post(`/admin/trigger-landing-content?batch=${batch}&force=${force}`),
+  triggerRichHooks: (batch = 200, force = false) =>
+    api.post(`/admin/trigger-rich-hooks?batch=${batch}&force=${force}`),
 }
 
 export const dashboardApi = {
