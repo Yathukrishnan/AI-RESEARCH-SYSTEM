@@ -641,12 +641,12 @@ Write ONLY the single sentence. No quotes. No labels."""
         hn_points: int = 0,
         citation_count: int = 0,
         github_stars: int = 0,
+        h_index: float = 0,
     ) -> str:
         """
-        Generate a rich, multi-sentence journalist narrative for the /report/:id page.
-        This is the big headline + opener — NOT the brief topic-page hook.
-        Written like a Wired or Atlantic opening paragraph: draws in a non-technical reader,
-        names the stakes, and hints at why this specific discovery matters right now.
+        Generate a rich, journalist narrative for the /report/:id page headline.
+        4-6 sentences in plain English — like a Wired or Atlantic feature opener.
+        Never includes the paper title as a label. Never uses jargon.
         """
         if not self._api_key:
             return ""
@@ -655,55 +655,66 @@ Write ONLY the single sentence. No quotes. No labels."""
         if not source:
             return ""
 
-        # Build social proof context for richer narrative
+        # Build social proof context
         signals = []
         if hf_upvotes > 0:
             signals.append(f"{hf_upvotes:,} AI engineers bookmarked it on HuggingFace")
         if hn_points > 0:
             signals.append(f"{hn_points} points on Hacker News")
         if citation_count > 0:
-            signals.append(f"cited by {citation_count} other papers")
+            signals.append(f"cited by {citation_count} other research papers")
         if github_stars > 0:
-            signals.append(f"{github_stars:,} GitHub stars")
+            signals.append(f"{github_stars:,} developers starred the code on GitHub")
+        if h_index > 15:
+            signals.append(f"lead author has an h-index of {int(h_index)} — among the most cited in the field")
         signal_str = ("; ".join(signals) + ".") if signals else ""
 
-        prompt = f"""You are a senior editor at Wired or The Atlantic writing the opening of a feature article about an AI research paper.
-Your reader is an intelligent, curious adult — not a scientist. They read quality journalism, not academic papers.
+        prompt = f"""You are a senior features editor at Wired magazine. You are writing the opening of a feature article about an AI research discovery for a general audience — curious, intelligent adults who have no science background.
 
-Topic: {topic_label}
-Paper title: {title[:200]}
-What it says: {source[:700]}
-{"Community signal: " + signal_str if signal_str else ""}
+Topic area: {topic_label}
+What the research says: {source[:800]}
+{("Community proof: " + signal_str) if signal_str else ""}
 
-Write 2–3 sentences (50–90 words total) that:
-1. Open with the discovery or shift — what changed, what is now possible, or what we learned
-2. Make clear WHY a normal person outside academia should care about this
-3. If there is strong community signal, weave it in naturally (e.g. "tens of thousands of engineers immediately took notice")
+Write 4 to 6 flowing sentences (150–250 words total) that:
+1. Start immediately with the DISCOVERY or SHIFT — what changed, what is now possible, what we now know. Do not warm up with a background sentence.
+2. Explain the real-world meaning: who does this affect and how does daily life or the world change because of this research?
+3. Make the stakes feel real — what happens if this works at scale? What problem does it solve that normal people actually care about?
+4. If there is community proof (engineers bookmarking it, developers starring code, other papers citing it), weave it in naturally in ONE sentence — not as a list.
+5. End with why this particular moment matters — why now, not five years ago.
 
-Rules:
-- No bullet points, no headers — flowing prose only
-- No technical jargon or acronyms without plain-English explanation
-- Do NOT start with "Researchers", "Scientists", "A new study", or "This paper"
-- Write as if you are opening a gripping magazine feature
-- Make it feel urgent and human — not like a press release
+Absolute rules — breaking any of these means the response is rejected:
+- DO NOT write the paper title anywhere. DO NOT start with the title, DO NOT include it mid-text.
+- DO NOT begin with a label like "Hook:", "Title:", "Article:", "Report:", "Paper:" — jump straight into the narrative.
+- DO NOT start with "Researchers", "Scientists", "A new study", "This paper", or "In this paper".
+- NO bullet points, NO headers, NO markdown — flowing prose paragraphs only.
+- NO technical jargon or acronyms without an immediate plain-English explanation in the same sentence.
+- Write in second person or third person — make the reader feel personally affected.
+- Each sentence must be understandable to someone who has never read an academic paper.
 
-Write ONLY the 2–3 sentences. No quotes. No labels."""
+Good opening examples (notice: no title, no labels, immediate discovery):
+"For the first time, a computer program can look at a medical scan and catch the early signs of a disease that trained doctors routinely miss — not because doctors are careless, but because the pattern is genuinely too subtle for the human eye."
+"The moment that AI researchers have been quietly dreading arrived this month: a language model that can explain its own reasoning step by step, in plain English, and be right more than nine times out of ten."
+
+Write ONLY the narrative sentences. No title. No labels. No quotes around the text."""
 
         try:
-            async with httpx.AsyncClient(timeout=25) as client:
+            async with httpx.AsyncClient(timeout=30) as client:
                 resp = await client.post(
                     f"{self.base_url}/chat/completions",
                     headers={"Authorization": f"Bearer {self._api_key}", "Content-Type": "application/json"},
                     json={
                         "model": self.model,
                         "messages": [{"role": "user", "content": prompt}],
-                        "max_tokens": 160,
-                        "temperature": 0.75,
+                        "max_tokens": 400,
+                        "temperature": 0.72,
                     }
                 )
                 if resp.status_code == 200:
                     text = resp.json()["choices"][0]["message"]["content"].strip().strip('"\'')
-                    if text and len(text) > 40:
+                    # Strip any label prefix the model might sneak in
+                    import re
+                    text = re.sub(r'^(Hook|Title|Article|Report|Paper|Narrative|Opening)[:\-–]\s*', '', text, flags=re.IGNORECASE).strip()
+                    if text and len(text) > 60:
                         return text if text.endswith('.') else text + '.'
         except Exception as e:
             logger.warning(f"Report hook generation error: {e}")

@@ -752,6 +752,7 @@ _TOPIC_META = {
 _LANDING_SELECT = (
     "rowid as id, arxiv_id, title, abstract, authors, categories, primary_category, "
     "published_at, pdf_url, github_url, github_stars, citation_count, h_index_max, "
+    "COALESCE(influential_citation_count, 0) as influential_citation_count, "
     "normalized_score, current_score, trend_label, ai_topic_tags, ai_summary, hook_text, "
     "hf_upvotes, hn_points, hn_comments, citation_velocity, trending_score, "
     "view_count, save_count, ai_topic_category, ai_lay_summary, ai_why_important, "
@@ -1023,6 +1024,7 @@ async def get_report(paper_id: int, db: TursoClient = Depends(get_db)):
                 hn_points=int(paper.get("hn_points") or 0),
                 citation_count=int(paper.get("citation_count") or 0),
                 github_stars=int(paper.get("github_stars") or 0),
+                h_index=float(paper.get("h_index_max") or 0),
             )
             if _report_hook:
                 paper["ai_journalist_hook"] = _report_hook
@@ -1044,14 +1046,23 @@ async def get_report(paper_id: int, db: TursoClient = Depends(get_db)):
     cit = int(paper.get("citation_count") or 0)
     stars = int(paper.get("github_stars") or 0)
 
+    h_idx = float(paper.get("h_index_max") or 0)
+    influential = int(paper.get("influential_citation_count") or 0)
+    cit_vel = float(paper.get("citation_velocity") or 0)
+    quality = round((float(paper.get("normalized_score") or 0)) * 100)
+
     social_proof = {
         "hf_upvotes": hf,
         "hn_points": hn,
         "hn_comments": hn_c,
         "citation_count": cit,
+        "influential_citation_count": influential,
         "github_stars": stars,
         "github_url": paper.get("github_url"),
-        "has_strong_signal": (hf > 0 or hn > 0),
+        "h_index": h_idx,
+        "citation_velocity": cit_vel,
+        "quality_score": quality,
+        "has_strong_signal": (hf > 0 or hn > 0 or cit > 10 or stars > 50),
         "community_score": round(
             min(1.0, (hf / 100) * 0.4 + (hn / 200) * 0.35 + min(1.0, cit / 50) * 0.25), 3
         ),

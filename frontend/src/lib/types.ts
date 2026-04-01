@@ -226,6 +226,7 @@ export interface LandingPaper {
   github_url?: string
   github_stars: number
   citation_count: number
+  influential_citation_count?: number
   normalized_score: number
   current_score: number
   trend_label?: string
@@ -237,6 +238,7 @@ export interface LandingPaper {
   hn_comments?: number
   citation_velocity?: number
   trending_score?: number
+  h_index_max?: number
   view_count: number
   save_count: number
   // Public landing fields
@@ -278,8 +280,12 @@ export interface SocialProof {
   hn_points: number
   hn_comments: number
   citation_count: number
+  influential_citation_count: number
   github_stars: number
   github_url?: string
+  h_index: number
+  citation_velocity: number
+  quality_score: number
   has_strong_signal: boolean
   community_score: number
 }
