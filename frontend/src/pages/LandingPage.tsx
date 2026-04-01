@@ -55,15 +55,7 @@ function TopicCard({ cat, index, onClick }: {
   const c = COLORS[cat.color] || COLORS.slate
   const narrativeHook: string = (cat as any).topic_hook || cat.tagline
 
-  // Pick a compelling CTA phrase — rotate through several
-  const ctas = [
-    'See the top stories →',
-    'Explore this week\'s picks →',
-    'Discover what\'s new →',
-    'Read the breakthroughs →',
-    'Check out what\'s happening →',
-  ]
-  const ctaText = ctas[index % ctas.length]
+  const ctaText = 'The top papers are here — check it out →'
 
   return (
     <motion.article
@@ -110,11 +102,16 @@ function HeroSection({ data, onRead, onViewMore }: {
   const paper = data.hero
   if (!paper) return null
 
-  const hook =
+  const fullHook =
     (paper as any).ai_journalist_hook ||
     paper.hook_text ||
-    paper.ai_lay_summary?.split('.')[0] ||
+    paper.ai_lay_summary ||
     paper.title
+
+  // Split into sentences — show only first as the headline
+  const hookSentences = fullHook.split(/(?<=[.!?])\s+(?=[A-Z"'])/).filter(Boolean)
+  const hook = hookSentences[0] || fullHook
+  const hookSubtext = hookSentences.slice(1, 3).join(' ')
 
   const hf    = paper.hf_upvotes || 0
   const hn    = paper.hn_points || 0
@@ -159,9 +156,9 @@ function HeroSection({ data, onRead, onViewMore }: {
           <h2 className="text-3xl md:text-4xl font-extrabold text-white leading-tight tracking-tight group-hover/hook:text-accent/90 transition-colors">
             {hook}
           </h2>
-          {paper.ai_lay_summary && (
+          {(hookSubtext || paper.ai_lay_summary) && (
             <p className="mt-3 text-base text-slate-400/80 leading-relaxed line-clamp-2">
-              {paper.ai_lay_summary}
+              {hookSubtext || paper.ai_lay_summary}
             </p>
           )}
         </div>
