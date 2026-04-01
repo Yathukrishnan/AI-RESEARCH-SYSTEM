@@ -746,6 +746,59 @@ _LANDING_SELECT = (
     "view_count, save_count, ai_topic_category, ai_lay_summary, ai_why_important, ai_key_findings"
 )
 
+# arXiv prefix → topic (mirrors ai_service.py heuristic, no AI call needed)
+_ARXIV_TO_TOPIC = {
+    "cs.cl": "Language", "cs.ai": "Language", "cs.ne": "Language",
+    "cs.cv": "Vision",
+    "cs.ro": "Robots", "cs.sy": "Robots",
+    "q-bio": "Health", "eess.sp": "Health",
+    "cs.cr": "Safety",
+    "physics": "Science", "astro-ph": "Science", "math": "Science",
+    "cond-mat": "Science", "quant-ph": "Science",
+    "cs.ar": "Efficiency", "cs.pf": "Efficiency",
+    "econ": "Business", "cs.ir": "Business",
+    "cs.lg": "Language",  # most cs.LG is language/ML
+    "stat.ml": "Language",
+}
+
+_ABSTRACT_TOPIC_HINTS = [
+    (["climate", "carbon", "emission", "sustainability", "renewable"], "Climate"),
+    (["drug", "clinical", "patient", "genomic", "protein", "disease", "medical", "biomedical"], "Health"),
+    (["robot", "manipulation", "locomotion", "autonomous vehicle", "drone", "actuator"], "Robots"),
+    (["safety", "alignment", "hallucination", "bias", "fairness", "ethics", "toxic"], "Safety"),
+    (["quantization", "pruning", "distillation", "compression", "inference speed", "edge deploy", "latency"], "Efficiency"),
+    (["finance", "stock", "market", "forecast", "recommendation", "e-commerce", "trading"], "Business"),
+    (["image", "vision", "visual", "diffusion", "generation", "segmentation", "detection", "video"], "Vision"),
+]
+
+def _derive_topic(primary_category: str, categories_json: str, abstract: str = "") -> str:
+    """
+    Derive a human topic from arXiv metadata — no AI call needed.
+    Priority: pre-saved ai_topic_category → arXiv prefix map → abstract keywords → General
+    """
+    cats = []
+    if primary_category:
+        cats.append(primary_category.lower())
+    if categories_json:
+        try:
+            extra = json.loads(categories_json)
+            cats += [c.lower() for c in extra if isinstance(c, str)]
+        except Exception:
+            pass
+
+    for cat in cats:
+        for prefix, topic in _ARXIV_TO_TOPIC.items():
+            if cat.startswith(prefix):
+                return topic
+
+    # Abstract keyword scan
+    text = (abstract or "").lower()
+    for keywords, topic in _ABSTRACT_TOPIC_HINTS:
+        if any(kw in text for kw in keywords):
+            return topic
+
+    return "General"
+
 
 def _parse_landing(p: dict) -> dict:
     """Parse a landing paper row — includes new AI fields."""
@@ -774,82 +827,80 @@ def _parse_landing(p: dict) -> dict:
 async def get_landing(db: TursoClient = Depends(get_db)):
     """
     Public landing page data — news magazine style, for non-technical readers.
+    Works with ALL papers regardless of whether AI landing fields are generated.
+    Topic grouping is derived on-the-fly from arXiv categories when ai_topic_category is null.
     Returns:
-      - hero: single featured paper (highest social proof + lay summary)
-      - breaking: top 3 papers with strongest HF+HN community signal
-      - categories: papers grouped by human topic (Language, Vision, Health…)
-        Each category has metadata + top 4 papers with hooks
+      - hero: highest community-signal paper (HF/HN) or best-scored fallback
+      - breaking: top 5 papers with strongest community signal
+      - categories: all papers grouped into human topics, 5 hooks per category
     """
-    cache_key = f"landing:{date.today().isoformat()}"
+    cache_key = f"landing_v2:{date.today().isoformat()}"
     cached = await cache_get(cache_key)
     if cached:
         return cached
 
-    # ── Hero: best social proof paper with lay summary ────────────────────────
-    hero_row = await db.fetchone(
+    # ── Fetch a wide pool of the best visible papers ──────────────────────────
+    # Pull enough to fill every category (10 topics × 5 papers = 50 minimum)
+    # Order: trending/social first, then by score — ensures community-hot papers
+    # appear at the top of their category
+    pool_rows = await db.fetchall(
         f"SELECT {_LANDING_SELECT} FROM papers "
         "WHERE is_deleted=0 AND is_duplicate=0 "
-        "AND (COALESCE(hf_upvotes,0) > 0 OR COALESCE(hn_points,0) > 0) "
-        "AND (ai_lay_summary IS NOT NULL AND ai_lay_summary != '') "
-        "ORDER BY (COALESCE(trending_score,0)*0.6 + COALESCE(normalized_score,0)*0.4) DESC "
-        "LIMIT 1"
-    )
-    # Fallback: best-scored paper even without lay summary
-    if not hero_row:
-        hero_row = await db.fetchone(
-            f"SELECT {_LANDING_SELECT} FROM papers "
-            "WHERE is_deleted=0 AND is_duplicate=0 "
-            "ORDER BY normalized_score DESC LIMIT 1"
-        )
-    hero = _parse_landing(dict(hero_row)) if hero_row else None
-
-    # ── Breaking: top 3 community-signal papers ───────────────────────────────
-    breaking_rows = await db.fetchall(
-        f"SELECT {_LANDING_SELECT} FROM papers "
-        "WHERE is_deleted=0 AND is_duplicate=0 "
-        "AND (COALESCE(hf_upvotes,0) + COALESCE(hn_points,0)) > 0 "
-        "ORDER BY (COALESCE(hf_upvotes,0)*0.5 + COALESCE(hn_points,0)*0.5 + "
-        "          COALESCE(trending_score,0)*100) DESC "
-        "LIMIT 6"
-    )
-    # Exclude hero from breaking
-    hero_id = hero["id"] if hero else None
-    breaking = [
-        _parse_landing(dict(r)) for r in breaking_rows
-        if r["id"] != hero_id
-    ][:3]
-
-    # ── Categories: group papers by topic, top 4 per category ─────────────────
-    topic_rows = await db.fetchall(
-        f"SELECT {_LANDING_SELECT} FROM papers "
-        "WHERE is_deleted=0 AND is_duplicate=0 "
-        "AND ai_topic_category IS NOT NULL "
-        "AND (hook_text IS NOT NULL OR ai_summary IS NOT NULL OR abstract IS NOT NULL) "
-        "ORDER BY normalized_score DESC "
-        "LIMIT 400"
+        "AND (hook_text IS NOT NULL OR abstract IS NOT NULL OR ai_summary IS NOT NULL) "
+        "ORDER BY "
+        "  (COALESCE(hf_upvotes,0)*0.4 + COALESCE(hn_points,0)*0.35 + "
+        "   COALESCE(trending_score,0)*100 + COALESCE(normalized_score,0)*20) DESC "
+        "LIMIT 500"
     )
 
-    # Group by topic
     from collections import defaultdict
-    topic_buckets: dict = defaultdict(list)
-    for r in topic_rows:
-        if r["id"] == hero_id:
-            continue
-        topic = r.get("ai_topic_category") or "General"
-        if len(topic_buckets[topic]) < 4:
-            topic_buckets[topic].append(_parse_landing(dict(r)))
+    topic_buckets: dict = defaultdict(list)  # topic → [paper, …]  max 5 each
+    all_parsed = []
 
-    # Build categories response — only include topics with ≥1 paper
+    for r in pool_rows:
+        p = _parse_landing(dict(r))
+        # Use saved category if available, else derive on-the-fly
+        topic = (
+            p.get("ai_topic_category")
+            or _derive_topic(
+                p.get("primary_category", ""),
+                json.dumps(p.get("categories", [])),
+                p.get("abstract") or p.get("ai_summary") or "",
+            )
+        )
+        p["_derived_topic"] = topic
+        all_parsed.append(p)
+        if len(topic_buckets[topic]) < 5:
+            topic_buckets[topic].append(p)
+
+    # ── Hero: best HF/HN paper first, else best score ─────────────────────────
+    social_papers = [p for p in all_parsed if (p.get("hf_upvotes") or 0) + (p.get("hn_points") or 0) > 0]
+    hero = social_papers[0] if social_papers else (all_parsed[0] if all_parsed else None)
+    hero_id = hero["id"] if hero else None
+
+    # ── Breaking: top 5 community-signal papers (exclude hero) ────────────────
+    breaking = [
+        p for p in social_papers
+        if p["id"] != hero_id
+    ][:5]
+    # If not enough social papers, pad with high-score papers
+    if len(breaking) < 3:
+        extras = [p for p in all_parsed if p["id"] != hero_id and p not in breaking]
+        breaking = (breaking + extras)[:5]
+
+    # ── Categories: remove hero from buckets, enforce max 5 per topic ─────────
     categories = []
     for topic, meta in _TOPIC_META.items():
-        papers_in_topic = topic_buckets.get(topic, [])
-        if not papers_in_topic:
+        bucket = [p for p in topic_buckets.get(topic, []) if p["id"] != hero_id]
+        if not bucket:
             continue
+        # Count all papers in this topic across full pool (not just top 5)
+        total_in_topic = sum(1 for p in all_parsed if p.get("_derived_topic") == topic and p["id"] != hero_id)
         categories.append({
             "topic": topic,
             **meta,
-            "paper_count": len(papers_in_topic),
-            "papers": papers_in_topic,
+            "paper_count": total_in_topic,
+            "papers": bucket[:5],
         })
 
     result = {
@@ -869,36 +920,46 @@ async def get_topic_papers(
     db: TursoClient = Depends(get_db),
 ):
     """
-    All papers for a given topic category — paginated, for the TopicPage drill-down.
-    sorted by: trending papers first, then by normalized_score.
+    All papers for a given human topic — paginated.
+    Works without ai_topic_category: derives topic on-the-fly from arXiv categories.
+    Fetches a large pool and filters in Python so pagination is consistent.
     """
     if topic not in _TOPIC_META:
         return {"papers": [], "total": 0, "topic": topic, "meta": None}
 
+    # Fetch a large pool sorted by relevance; filter by topic in Python
+    pool_rows = await db.fetchall(
+        f"SELECT {_LANDING_SELECT} FROM papers "
+        "WHERE is_deleted=0 AND is_duplicate=0 "
+        "AND (hook_text IS NOT NULL OR abstract IS NOT NULL OR ai_summary IS NOT NULL) "
+        "ORDER BY COALESCE(is_trending,0) DESC, normalized_score DESC "
+        "LIMIT 2000"
+    )
+
+    # Filter to matching topic
+    matched = []
+    for r in pool_rows:
+        p = _parse_landing(dict(r))
+        t = (
+            p.get("ai_topic_category")
+            or _derive_topic(
+                p.get("primary_category", ""),
+                json.dumps(p.get("categories", [])),
+                p.get("abstract") or p.get("ai_summary") or "",
+            )
+        )
+        if t == topic:
+            matched.append(p)
+
     limit = 24
     offset = page * limit
+    page_papers = matched[offset: offset + limit]
 
-    total = await db.fetchone(
-        "SELECT COUNT(*) as n FROM papers WHERE is_deleted=0 AND is_duplicate=0 "
-        "AND ai_topic_category=?",
-        [topic]
-    )
-    total_count = total["n"] if total else 0
-
-    rows = await db.fetchall(
-        f"SELECT {_LANDING_SELECT} FROM papers "
-        "WHERE is_deleted=0 AND is_duplicate=0 AND ai_topic_category=? "
-        "ORDER BY COALESCE(is_trending,0) DESC, normalized_score DESC "
-        "LIMIT ? OFFSET ?",
-        [topic, limit, offset]
-    )
-
-    papers = [_parse_landing(dict(r)) for r in rows]
     return {
-        "papers": papers,
-        "total": total_count,
+        "papers": page_papers,
+        "total": len(matched),
         "page": page,
-        "has_more": (offset + len(papers)) < total_count,
+        "has_more": (offset + len(page_papers)) < len(matched),
         "topic": topic,
         "meta": _TOPIC_META.get(topic),
     }
@@ -957,17 +1018,40 @@ async def get_report(paper_id: int, db: TursoClient = Depends(get_db)):
     else:
         trend_reason = "Curated by our scoring system as a high-quality research paper worth reading."
 
-    # Related papers — same topic category, similar score range
-    topic = paper.get("ai_topic_category") or "General"
-    related_rows = await db.fetchall(
+    # Derive topic (use saved value if available, else derive from arXiv)
+    topic = (
+        paper.get("ai_topic_category")
+        or _derive_topic(
+            paper.get("primary_category", ""),
+            json.dumps(paper.get("categories", [])),
+            paper.get("abstract") or paper.get("ai_summary") or "",
+        )
+    )
+    paper["_derived_topic"] = topic
+
+    # Related papers — fetch pool, filter by same derived topic
+    related_pool = await db.fetchall(
         f"SELECT {_LANDING_SELECT} FROM papers "
         "WHERE is_deleted=0 AND is_duplicate=0 AND rowid != ? "
-        "AND ai_topic_category = ? "
         "ORDER BY ABS(normalized_score - ?) ASC, normalized_score DESC "
-        "LIMIT 3",
-        [paper_id, topic, float(paper.get("normalized_score") or 0)]
+        "LIMIT 80",
+        [paper_id, float(paper.get("normalized_score") or 0)]
     )
-    related = [_parse_landing(dict(r)) for r in related_rows]
+    related = []
+    for r in related_pool:
+        rp = _parse_landing(dict(r))
+        rt = (
+            rp.get("ai_topic_category")
+            or _derive_topic(
+                rp.get("primary_category", ""),
+                json.dumps(rp.get("categories", [])),
+                rp.get("abstract") or rp.get("ai_summary") or "",
+            )
+        )
+        if rt == topic:
+            related.append(rp)
+        if len(related) >= 3:
+            break
 
     return {
         "paper": paper,
