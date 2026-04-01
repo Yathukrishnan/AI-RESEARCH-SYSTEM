@@ -49,6 +49,15 @@ function getSummary(p: LandingPaper): string {
   return p.abstract ? truncate(p.abstract, 200) : ''
 }
 
+// ── Mini score pill ────────────────────────────────────────────────────────────
+function ScorePill({ icon, value, title }: { icon: string; value: string; title: string }) {
+  return (
+    <span title={title} className="inline-flex items-center gap-1 text-[10px] text-muted/60 bg-white/4 border border-white/8 rounded-full px-2 py-0.5">
+      {icon} {value}
+    </span>
+  )
+}
+
 // ── A single story card ───────────────────────────────────────────────────────
 function StoryCard({ paper, index, color, onRead }: {
   paper: LandingPaper
@@ -59,8 +68,20 @@ function StoryCard({ paper, index, color, onRead }: {
   const c = COLORS[color] || COLORS.slate
   const hook = getPaperHook(paper)
   const summary = getSummary(paper)
-  const hf = paper.hf_upvotes || 0
-  const hn = paper.hn_points || 0
+  const hf    = paper.hf_upvotes || 0
+  const hn    = paper.hn_points || 0
+  const hnC   = paper.hn_comments || 0
+  const cit   = paper.citation_count || 0
+  const stars = paper.github_stars || 0
+  const hIdx  = paper.h_index_max || 0
+  const qual  = Math.round((paper.normalized_score || 0) * 100)
+
+  const fmt = (n: number) => n >= 1000 ? `${(n/1000).toFixed(1)}k` : String(n)
+
+  // Split hook into sentences — first one is the big headline
+  const hookSentences = hook.split(/(?<=[.!?])\s+(?=[A-Z"'])/).filter(Boolean)
+  const headline = hookSentences[0] || hook
+  const bodyHook = hookSentences.slice(1, 3).join(' ')
 
   return (
     <motion.article
@@ -68,48 +89,52 @@ function StoryCard({ paper, index, color, onRead }: {
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: Math.min(index * 0.05, 0.45), duration: 0.35 }}
       onClick={onRead}
-      className="group cursor-pointer border-b border-white/5 last:border-0 py-7 first:pt-2"
+      className="group cursor-pointer border-b border-white/5 last:border-0 py-8 first:pt-2"
     >
       <div className="flex gap-5 items-start">
         {/* Story number */}
-        <span className="font-mono text-sm text-muted/25 w-5 shrink-0 mt-1">{index + 1}</span>
+        <span className="font-mono text-sm text-muted/20 w-5 shrink-0 mt-1.5">{index + 1}</span>
 
-        <div className="flex-1 min-w-0 space-y-2.5">
-          {/* Trend indicator if paper is hot */}
-          {(hf > 100 || hn > 50) && (
-            <div className="flex items-center gap-2">
-              {hf > 100 && (
-                <span className="text-[10px] text-orange-400/70">
-                  🤗 {hf > 999 ? `${(hf/1000).toFixed(1)}k` : hf} engineers discussing
-                </span>
-              )}
-              {hn > 50 && (
-                <span className="text-[10px] text-amber-400/70">
-                  🟠 {hn} on Hacker News
-                </span>
-              )}
-            </div>
+        <div className="flex-1 min-w-0 space-y-3">
+
+          {/* THE HOOK — headline sentence big, rest smaller */}
+          <div className="space-y-1.5">
+            <h3 className={cn(
+              'text-lg md:text-xl font-bold leading-snug transition-colors',
+              c.hookHover, 'text-white/92'
+            )}>
+              {headline}
+            </h3>
+            {bodyHook && (
+              <p className="text-sm text-white/60 leading-snug">
+                {truncate(bodyHook, 180)}
+              </p>
+            )}
+          </div>
+
+          {/* Plain English summary */}
+          {summary && (
+            <p className="text-sm text-muted/60 leading-relaxed line-clamp-2">
+              {truncate(summary, 200)}
+            </p>
           )}
 
-          {/* THE HOOK — the main story sentence */}
-          <h3 className={cn(
-            'text-lg md:text-xl font-bold leading-snug transition-colors',
-            c.hookHover, 'text-white/90'
-          )}>
-            {hook}
-          </h3>
-
-          {/* 2-line summary — plain English, no jargon */}
-          {summary && (
-            <p className="text-sm text-muted/70 leading-relaxed line-clamp-2">
-              {truncate(summary, 220)}
-            </p>
+          {/* Credibility scores — only show non-zero */}
+          {(hf > 0 || hn > 0 || cit > 0 || stars > 0 || hIdx > 0 || qual > 0) && (
+            <div className="flex flex-wrap gap-1.5 pt-0.5">
+              {hf > 0 && <ScorePill icon="🤗" value={`${fmt(hf)} upvotes`} title="HuggingFace AI engineer upvotes" />}
+              {hn > 0 && <ScorePill icon="🟠" value={hnC > 0 ? `${hn} pts · ${hnC}` : `${hn} pts`} title="Hacker News score" />}
+              {cit > 0 && <ScorePill icon="📚" value={`${fmt(cit)} citations`} title="Times cited by other papers" />}
+              {stars > 0 && <ScorePill icon="⭐" value={`${fmt(stars)} stars`} title="GitHub stars on the code" />}
+              {hIdx > 0 && <ScorePill icon="🧑‍🔬" value={`h-${Math.round(hIdx)}`} title="Lead author h-index" />}
+              {qual > 0 && <ScorePill icon="✦" value={`${qual}/100`} title="Quality score" />}
+            </div>
           )}
 
           {/* Read link */}
           <div className={cn(
-            'flex items-center gap-1.5 text-xs font-semibold transition-colors',
-            c.text, 'opacity-60 group-hover:opacity-100'
+            'flex items-center gap-1.5 text-xs font-semibold transition-colors pt-0.5',
+            c.text, 'opacity-50 group-hover:opacity-100'
           )}>
             Read the full report <ArrowRight size={11} className="transition-transform group-hover:translate-x-0.5" />
           </div>

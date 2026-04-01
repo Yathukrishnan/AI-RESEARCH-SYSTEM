@@ -968,6 +968,51 @@ async def get_topic_papers(
     offset = page * limit
     page_papers = matched[offset: offset + limit]
 
+    # ── Generate journalist hooks for page papers that lack one ───────────────
+    # Only runs for papers without ai_journalist_hook (≤120 chars = short hook_text).
+    # Parallel with semaphore=3 so page load stays fast.
+    papers_needing_hooks = [
+        p for p in page_papers
+        if not p.get("ai_journalist_hook") or len(p.get("ai_journalist_hook", "")) < 120
+    ]
+    if papers_needing_hooks:
+        try:
+            from app.services.ai_service import AIValidationService
+            from app.core.config import settings
+            _ai = AIValidationService(settings.OPENROUTER_API_KEY)
+            topic_label = _TOPIC_META.get(topic, {}).get("label", "AI Research")
+            sem = asyncio.Semaphore(3)
+
+            async def _gen_hook(p: dict):
+                async with sem:
+                    try:
+                        hook = await _ai.generate_report_hook(
+                            title=p.get("title", ""),
+                            abstract=p.get("abstract") or p.get("ai_summary") or "",
+                            ai_summary=p.get("ai_summary") or "",
+                            topic_label=topic_label,
+                            hf_upvotes=int(p.get("hf_upvotes") or 0),
+                            hn_points=int(p.get("hn_points") or 0),
+                            citation_count=int(p.get("citation_count") or 0),
+                            github_stars=int(p.get("github_stars") or 0),
+                            h_index=float(p.get("h_index_max") or 0),
+                        )
+                        if hook:
+                            p["ai_journalist_hook"] = hook
+                            try:
+                                await db.execute(
+                                    "UPDATE papers SET ai_journalist_hook=? WHERE rowid=?",
+                                    [hook, p["id"]]
+                                )
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+
+            await asyncio.gather(*[_gen_hook(p) for p in papers_needing_hooks])
+        except Exception:
+            pass
+
     return {
         "papers": page_papers,
         "total": len(matched),
