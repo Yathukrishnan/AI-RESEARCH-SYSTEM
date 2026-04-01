@@ -879,7 +879,7 @@ async def generate_rich_journalist_hooks(batch_size: int = 200, force: bool = Fa
 
     These are the hooks shown on the Topic page and Report page.
     force=True: overwrite all existing hooks (backfill / style refresh).
-    force=False: only fill papers missing a rich hook (< 500 chars).
+    force=False: only fill papers missing a rich hook (< 800 chars).
     """
     from app.api.feed import _TOPIC_META, _derive_topic
 
@@ -892,7 +892,7 @@ async def generate_rich_journalist_hooks(batch_size: int = 200, force: bool = Fa
     else:
         condition = (
             "is_deleted = 0 AND is_duplicate = 0 "
-            "AND (ai_journalist_hook IS NULL OR LENGTH(ai_journalist_hook) < 500) "
+            "AND (ai_journalist_hook IS NULL OR LENGTH(ai_journalist_hook) < 800) "
             "AND (abstract IS NOT NULL OR ai_summary IS NOT NULL)"
         )
 
@@ -935,7 +935,7 @@ async def generate_rich_journalist_hooks(batch_size: int = 200, force: bool = Fa
                     ),
                     timeout=30.0
                 )
-                if hook and len(hook) >= 500:
+                if hook and len(hook) >= 800:
                     await turso_db.execute(
                         "UPDATE papers SET ai_journalist_hook=? WHERE rowid=?",
                         [hook, p["id"]]

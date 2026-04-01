@@ -1042,10 +1042,10 @@ async def get_report(paper_id: int, db: TursoClient = Depends(get_db)):
     topic_label_early = _TOPIC_META.get(topic_early, {}).get("label", "AI Research")
 
     # ── Generate rich report-page journalist hook on-the-fly ──────────────────
-    # A rich hook is 150-250 words (~900-1500 chars). Anything <500 chars is
-    # a short single-sentence hook that needs upgrading to the full narrative.
+    # A rich hook is 200-350 words (~1200-2100 chars). Anything <800 chars is
+    # a short hook that needs upgrading to the full narrative.
     _report_hook = paper.get("ai_journalist_hook") or ""
-    _needs_regen = not _report_hook or len(_report_hook) < 500
+    _needs_regen = not _report_hook or len(_report_hook) < 800
     if _needs_regen:
         try:
             from app.services.ai_service import AIValidationService

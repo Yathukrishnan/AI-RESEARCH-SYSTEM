@@ -670,33 +670,37 @@ Write ONLY the single sentence. No quotes. No labels."""
             signals.append(f"lead author has an h-index of {int(h_index)} — among the most cited in the field")
         signal_str = ("; ".join(signals) + ".") if signals else ""
 
-        prompt = f"""You are a senior features editor at Wired magazine. You are writing the opening of a feature article about an AI research discovery for a general audience — curious, intelligent adults who have no science background.
+        prompt = f"""You are a senior investigative journalist at The Atlantic writing a feature story opening for a general audience. Your readers are intelligent, curious adults — not scientists. They understand stories, tension, stakes, and consequences. They do not understand jargon.
 
 Topic area: {topic_label}
-What the research says: {source[:800]}
-{("Community proof: " + signal_str) if signal_str else ""}
+Research content: {source[:1000]}
+{("Community signals: " + signal_str) if signal_str else ""}
 
-Write 4 to 6 flowing sentences (150–250 words total) that:
-1. Start immediately with the DISCOVERY or SHIFT — what changed, what is now possible, what we now know. Do not warm up with a background sentence.
-2. Explain the real-world meaning: who does this affect and how does daily life or the world change because of this research?
-3. Make the stakes feel real — what happens if this works at scale? What problem does it solve that normal people actually care about?
-4. If there is community proof (engineers bookmarking it, developers starring code, other papers citing it), weave it in naturally in ONE sentence — not as a list.
-5. End with why this particular moment matters — why now, not five years ago.
+Write 5 to 7 flowing sentences (200–350 words) structured like a real magazine feature opener:
 
-Absolute rules — breaking any of these means the response is rejected:
-- DO NOT write the paper title anywhere. DO NOT start with the title, DO NOT include it mid-text.
-- DO NOT begin with a label like "Hook:", "Title:", "Article:", "Report:", "Paper:" — jump straight into the narrative.
-- DO NOT start with "Researchers", "Scientists", "A new study", "This paper", or "In this paper".
-- NO bullet points, NO headers, NO markdown — flowing prose paragraphs only.
-- NO technical jargon or acronyms without an immediate plain-English explanation in the same sentence.
-- Write in second person or third person — make the reader feel personally affected.
-- Each sentence must be understandable to someone who has never read an academic paper.
+STRUCTURE (vary this — do not always use the same pattern):
+- Open with a specific PROBLEM, TENSION, or BLIND SPOT that this research exposes or addresses. Be concrete — name what was broken, what was unknown, what was dangerously assumed.
+- In the next 2-3 sentences, explain precisely WHAT the research discovered or built — name the specific method, benchmark, dataset, or finding. Use the real name if one exists, then immediately explain what it means in plain English.
+- Show the STAKES: who is affected? A doctor? A developer? A teenager? What does this mean for the real world if it scales?
+- If relevant, contrast the problem with the solution — what was the gap, and how does this close it?
+- End with WHY NOW — what makes this breakthrough possible today that wasn't possible two years ago?
 
-Good opening examples (notice: no title, no labels, immediate discovery):
-"For the first time, a computer program can look at a medical scan and catch the early signs of a disease that trained doctors routinely miss — not because doctors are careless, but because the pattern is genuinely too subtle for the human eye."
-"The moment that AI researchers have been quietly dreading arrived this month: a language model that can explain its own reasoning step by step, in plain English, and be right more than nine times out of ten."
+RULES — any violation means the output is rejected:
+- NEVER write the paper title. NEVER start with it. NEVER include it anywhere.
+- NEVER begin with "Researchers", "Scientists", "A new study", "A team", "This paper", "In this paper", "This research".
+- NEVER begin with a label like "Hook:", "Article:", "Report:", "Opening:" — start the narrative immediately.
+- NO bullet points. NO headers. NO markdown. Flowing prose only.
+- NO jargon or acronym without an instant plain-English explanation in the same sentence (e.g. "a technique called X, which works by...").
+- Every sentence must be understood by someone who last studied science in high school.
+- Make the stakes feel personal — use "you", "your doctor", "your phone", "your data" when natural.
+- Vary your sentence openings — do not start three sentences with the same word.
 
-Write ONLY the narrative sentences. No title. No labels. No quotes around the text."""
+TONE EXAMPLES to match:
+"Computer vision is evolving far beyond generating pretty pictures, but this week's research reveals alarming blind spots alongside breathtaking new capabilities. Researchers have exposed a new breed of attack where malicious instructions are invisibly embedded directly into image pixels, allowing hackers to bypass standard safety filters. Compounding these structural flaws, a newly introduced benchmark proves that despite their stunning photorealism, state-of-the-art image generators fundamentally fail at basic spatial reasoning."
+
+"The moment your phone's keyboard auto-corrects 'their' to 'there' feels trivial — but beneath that correction lives a mathematical model trained on more text than every human being has ever read. What researchers just published changes how that model learns: instead of reading everything once, it now knows which facts to trust, which to question, and critically, which to forget. That distinction, invisible to the user, is the difference between a tool that helps you think and one that confidently tells you wrong things."
+
+Write ONLY the narrative. No title. No labels. No quotes around the output."""
 
         try:
             async with httpx.AsyncClient(timeout=30) as client:
@@ -706,8 +710,8 @@ Write ONLY the narrative sentences. No title. No labels. No quotes around the te
                     json={
                         "model": self.model,
                         "messages": [{"role": "user", "content": prompt}],
-                        "max_tokens": 500,
-                        "temperature": 0.72,
+                        "max_tokens": 700,
+                        "temperature": 0.82,
                     }
                 )
                 if resp.status_code == 200:

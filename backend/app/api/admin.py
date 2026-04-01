@@ -350,7 +350,7 @@ async def get_rich_hooks_status(db: TursoClient = Depends(get_db), _: dict = Dep
     total = await db.count("papers", "is_deleted=0 AND is_duplicate=0")
     with_hooks = await db.count(
         "papers",
-        "is_deleted=0 AND is_duplicate=0 AND ai_journalist_hook IS NOT NULL AND LENGTH(ai_journalist_hook) >= 500"
+        "is_deleted=0 AND is_duplicate=0 AND ai_journalist_hook IS NOT NULL AND LENGTH(ai_journalist_hook) >= 800"
     )
     missing = total - with_hooks
     return {
