@@ -873,8 +873,6 @@ async def generate_landing_content(batch_size: int = 100, force: bool = False) -
 
 
 # ── Live progress tracker for rich hook generation ────────────────────────────
-# Simple in-memory dict — safe for single-instance Render deployment.
-# Reset on each new run. Polled by GET /admin/rich-hooks-progress.
 rich_hooks_progress: dict = {
     "status": "idle",       # idle | running | done | error
     "total": 0,
@@ -883,6 +881,8 @@ rich_hooks_progress: dict = {
     "started_at": None,
     "finished_at": None,
 }
+# Lock prevents two simultaneous jobs from racing on the progress dict
+_rich_hooks_lock = asyncio.Lock()
 
 
 async def generate_rich_journalist_hooks(batch_size: int = 5000, force: bool = False) -> int:
@@ -910,81 +910,96 @@ async def generate_rich_journalist_hooks(batch_size: int = 5000, force: bool = F
             "AND (abstract IS NOT NULL OR ai_summary IS NOT NULL)"
         )
 
-    rows = await turso_db.fetchall(
-        f"SELECT rowid as id, title, abstract, ai_summary, categories, "
-        f"primary_category, hf_upvotes, hn_points, citation_count, github_stars, h_index_max "
-        f"FROM papers WHERE {condition} "
-        f"ORDER BY normalized_score DESC LIMIT ?",
-        [batch_size]
-    )
-    if not rows:
-        logger.info("Rich hooks: no papers to process")
-        rich_hooks_progress.update({"status": "done", "total": 0, "done": 0, "failed": 0,
-                                    "finished_at": datetime.utcnow().isoformat()})
+    # Prevent two simultaneous jobs
+    if _rich_hooks_lock.locked():
+        logger.warning("Rich hooks: job already running, skipping duplicate trigger")
         return 0
 
-    total = len(rows)
-    logger.info(f"Rich hooks: generating for {total} papers…")
+    async with _rich_hooks_lock:
+        rows = await turso_db.fetchall(
+            f"SELECT rowid as id, title, abstract, ai_summary, categories, "
+            f"primary_category, hf_upvotes, hn_points, citation_count, github_stars, h_index_max "
+            f"FROM papers WHERE {condition} "
+            f"ORDER BY normalized_score DESC LIMIT ?",
+            [batch_size]
+        )
+        if not rows:
+            logger.info("Rich hooks: no papers to process")
+            rich_hooks_progress.update({"status": "done", "total": 0, "done": 0, "failed": 0,
+                                        "finished_at": datetime.utcnow().isoformat()})
+            return 0
 
-    # Reset progress tracker for this run
-    rich_hooks_progress.update({
-        "status": "running",
-        "total": total,
-        "done": 0,
-        "failed": 0,
-        "started_at": datetime.utcnow().isoformat(),
-        "finished_at": None,
-    })
+        total = len(rows)
+        logger.info(f"Rich hooks: generating for {total} papers…")
 
-    ai_svc = AIValidationService(settings.OPENROUTER_API_KEY)
-    semaphore = asyncio.Semaphore(3)
-
-    async def _gen_rich(p: dict):
-        async with semaphore:
-            try:
-                categories = json.loads(p.get("categories") or "[]")
-                primary = p.get("primary_category") or (categories[0] if categories else "")
-                topic = _derive_topic(primary, categories)
-                topic_label = _TOPIC_META.get(topic, {}).get("label", "AI Research")
-
-                hook = await asyncio.wait_for(
-                    ai_svc.generate_report_hook(
-                        title=p.get("title", ""),
-                        abstract=p.get("abstract") or p.get("ai_summary") or "",
-                        ai_summary=p.get("ai_summary") or "",
-                        topic_label=topic_label,
-                        hf_upvotes=int(p.get("hf_upvotes") or 0),
-                        hn_points=int(p.get("hn_points") or 0),
-                        citation_count=int(p.get("citation_count") or 0),
-                        github_stars=int(p.get("github_stars") or 0),
-                        h_index=float(p.get("h_index_max") or 0),
-                    ),
-                    timeout=30.0
-                )
-                if hook and len(hook) >= 800:
-                    await turso_db.execute(
-                        "UPDATE papers SET ai_journalist_hook=? WHERE rowid=?",
-                        [hook, p["id"]]
-                    )
-                    rich_hooks_progress["done"] += 1
-                    logger.debug(f"Rich hook OK: paper {p['id']} ({len(hook)} chars)")
-                else:
-                    rich_hooks_progress["failed"] += 1
-                    logger.debug(f"Rich hook too short for paper {p['id']}: {len(hook or '')} chars")
-            except Exception as e:
-                rich_hooks_progress["failed"] += 1
-                logger.error(f"Rich hook error paper {p.get('id')}: {e}")
-
-    try:
-        await asyncio.gather(*[_gen_rich(p) for p in rows], return_exceptions=True)
+        # Reset counters atomically at job start
         rich_hooks_progress.update({
-            "status": "done",
-            "finished_at": datetime.utcnow().isoformat(),
+            "status": "running",
+            "total": total,
+            "done": 0,
+            "failed": 0,
+            "started_at": datetime.utcnow().isoformat(),
+            "finished_at": None,
         })
-    except Exception as e:
-        rich_hooks_progress.update({"status": "error", "finished_at": datetime.utcnow().isoformat()})
-        logger.error(f"Rich hooks gather error: {e}")
 
-    processed = rich_hooks_progress["done"]
-    logger.info(f"Rich hooks: done — {processed}/{total} hooks generated")
-    return processed
+        ai_svc = AIValidationService(settings.OPENROUTER_API_KEY)
+        semaphore = asyncio.Semaphore(3)
+        # Use a list so increments are safe (asyncio is single-threaded, no true race,
+        # but avoids any read-modify-write surprise with the outer dict reference)
+        counters = {"done": 0, "failed": 0}
+
+        async def _gen_rich(p: dict):
+            async with semaphore:
+                try:
+                    categories = json.loads(p.get("categories") or "[]")
+                    primary = p.get("primary_category") or (categories[0] if categories else "")
+                    topic = _derive_topic(primary, categories)
+                    topic_label = _TOPIC_META.get(topic, {}).get("label", "AI Research")
+
+                    hook = await asyncio.wait_for(
+                        ai_svc.generate_report_hook(
+                            title=p.get("title", ""),
+                            abstract=p.get("abstract") or p.get("ai_summary") or "",
+                            ai_summary=p.get("ai_summary") or "",
+                            topic_label=topic_label,
+                            hf_upvotes=int(p.get("hf_upvotes") or 0),
+                            hn_points=int(p.get("hn_points") or 0),
+                            citation_count=int(p.get("citation_count") or 0),
+                            github_stars=int(p.get("github_stars") or 0),
+                            h_index=float(p.get("h_index_max") or 0),
+                        ),
+                        timeout=30.0
+                    )
+                    if hook and len(hook) >= 800:
+                        await turso_db.execute(
+                            "UPDATE papers SET ai_journalist_hook=? WHERE rowid=?",
+                            [hook, p["id"]]
+                        )
+                        counters["done"] += 1
+                        logger.debug(f"Rich hook OK: paper {p['id']} ({len(hook)} chars)")
+                    else:
+                        counters["failed"] += 1
+                        logger.debug(f"Rich hook too short for paper {p['id']}: {len(hook or '')} chars")
+                except Exception as e:
+                    counters["failed"] += 1
+                    logger.error(f"Rich hook error paper {p.get('id')}: {e}")
+                finally:
+                    # Update shared progress after every paper
+                    rich_hooks_progress["done"] = counters["done"]
+                    rich_hooks_progress["failed"] = counters["failed"]
+
+        try:
+            await asyncio.gather(*[_gen_rich(p) for p in rows], return_exceptions=True)
+            rich_hooks_progress.update({
+                "status": "done",
+                "done": counters["done"],
+                "failed": counters["failed"],
+                "finished_at": datetime.utcnow().isoformat(),
+            })
+        except Exception as e:
+            rich_hooks_progress.update({"status": "error", "finished_at": datetime.utcnow().isoformat()})
+            logger.error(f"Rich hooks gather error: {e}")
+
+        processed = counters["done"]
+        logger.info(f"Rich hooks: done — {processed}/{total} hooks generated")
+        return processed
