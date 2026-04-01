@@ -110,6 +110,12 @@ export const adminApi = {
     api.post(`/admin/trigger-landing-content?batch=${batch}&force=${force}`),
   triggerRichHooks: (batch = 500, force = false) =>
     api.post(`/admin/trigger-rich-hooks?batch=${batch}&force=${force}`),
+  getRichHooksStatus: () => api.get('/admin/rich-hooks-status'),
+  getTopicCategories: () => api.get('/admin/topic-categories'),
+  addTopicCategory: (data: { key: string; emoji: string; label: string; tagline: string; hook: string; color: string }) =>
+    api.post('/admin/topic-categories', data),
+  deleteTopicCategory: (key: string) => api.delete(`/admin/topic-categories/${encodeURIComponent(key)}`),
+  restoreTopicCategory: (key: string) => api.patch(`/admin/topic-categories/${encodeURIComponent(key)}/restore`),
 }
 
 export const dashboardApi = {

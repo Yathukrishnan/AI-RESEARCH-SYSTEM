@@ -5,7 +5,7 @@ import {
   LayoutDashboard, FileText, Settings, Tag, RefreshCw, Plus, Trash2,
   Play, ArrowLeft, Database, TrendingUp, Brain, CheckCircle, Loader2,
   Activity, Users, Eye, Copy, Shield, ShieldOff, Wifi, WifiOff, Zap,
-  Clock, BookOpen, Star, AlertTriangle, Download, Layers
+  Clock, BookOpen, Star, AlertTriangle, Download, Layers, Globe
 } from 'lucide-react'
 import { adminApi } from '@/lib/api'
 import { AdminStats, ConfigItem, Keyword, Subject, AnalysisLog, AdminUser } from '@/lib/types'
@@ -21,6 +21,7 @@ function AdminSidebar() {
     { to: '/admin/analysis', label: 'Analysis', icon: Activity },
     { to: '/admin/papers', label: 'Papers', icon: FileText },
     { to: '/admin/keywords', label: 'Keywords', icon: Tag },
+    { to: '/admin/topics', label: 'Topics', icon: Globe },
     { to: '/admin/subjects', label: 'Subjects', icon: Layers },
     { to: '/admin/users', label: 'Users', icon: Users },
     { to: '/admin/config', label: 'Config', icon: Settings },
@@ -551,8 +552,16 @@ function AnalysisAdmin() {
   const [loading, setLoading] = useState(true)
   const [running, setRunning] = useState(false)
   const [polling, setPolling] = useState(false)
+  const [hooksStatus, setHooksStatus] = useState<{ total: number; with_rich_hooks: number; missing_hooks: number; percent: number } | null>(null)
+
+  const loadHooksStatus = () => {
+    adminApi.getRichHooksStatus()
+      .then(r => setHooksStatus(r.data))
+      .catch(() => {})
+  }
 
   const load = () => {
+    loadHooksStatus()
     adminApi.getAnalysisStatus()
       .then((r) => {
         setLog(r.data.latest_run || null)
@@ -664,9 +673,38 @@ function AnalysisAdmin() {
           <p className="text-xs text-muted mb-3">
             <span className="text-white font-semibold">Rich Journalist Hooks</span> — generates magazine-style 4-6 sentence hooks for the Topic &amp; Report pages. Run after adding new papers.
           </p>
+
+          {/* Progress bar */}
+          {hooksStatus && (
+            <div className="mb-4 space-y-2 bg-surface-2 rounded-xl p-4">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-semibold text-white">Rich hooks coverage</span>
+                <span className="text-muted">
+                  {hooksStatus.with_rich_hooks.toLocaleString()} / {hooksStatus.total.toLocaleString()} papers
+                  <span className={cn('ml-2 font-bold', hooksStatus.percent === 100 ? 'text-green-400' : hooksStatus.percent >= 60 ? 'text-yellow-400' : 'text-red-400')}>
+                    {hooksStatus.percent}%
+                  </span>
+                </span>
+              </div>
+              <div className="w-full h-2.5 bg-surface rounded-full overflow-hidden">
+                <div
+                  className={cn('h-full rounded-full transition-all duration-500',
+                    hooksStatus.percent === 100 ? 'bg-green-500' : hooksStatus.percent >= 60 ? 'bg-yellow-500' : 'bg-teal-500'
+                  )}
+                  style={{ width: `${hooksStatus.percent}%` }}
+                />
+              </div>
+              <p className="text-xs text-muted">
+                {hooksStatus.missing_hooks > 0
+                  ? `⚠️ ${hooksStatus.missing_hooks.toLocaleString()} papers still need rich hooks — click "Fill Missing Rich Hooks" below`
+                  : '✅ All papers have rich journalist hooks'}
+              </p>
+            </div>
+          )}
+
           <div className="flex flex-wrap gap-3">
             <button
-              onClick={() => generateRichHooks(false)}
+              onClick={() => { generateRichHooks(false); setTimeout(loadHooksStatus, 3000) }}
               disabled={running}
               className="flex items-center gap-2 px-4 py-2 bg-teal-500/10 border border-teal-500/30 text-teal-400 text-sm font-medium rounded-xl hover:bg-teal-500/20 disabled:opacity-50 transition-all"
             >
@@ -674,7 +712,7 @@ function AnalysisAdmin() {
               Fill Missing Rich Hooks
             </button>
             <button
-              onClick={() => generateRichHooks(true)}
+              onClick={() => { generateRichHooks(true); setTimeout(loadHooksStatus, 3000) }}
               disabled={running}
               className="flex items-center gap-2 px-4 py-2 bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-sm font-medium rounded-xl hover:bg-cyan-500/20 disabled:opacity-50 transition-all"
             >
@@ -924,6 +962,197 @@ function PapersAdmin() {
     </div>
   )
 }
+
+// ── Topic Categories (non-technical feed) ────────────────────────────────────
+
+const TOPIC_COLORS = ['slate','blue','pink','orange','green','red','cyan','yellow','purple','emerald']
+
+interface TopicCategory {
+  key: string; emoji: string; label: string; tagline: string; hook: string
+  color: string; paper_count: number; is_builtin: boolean; is_visible: boolean
+}
+
+function TopicsAdmin() {
+  const [topics, setTopics] = useState<TopicCategory[]>([])
+  const [loading, setLoading] = useState(true)
+  const [form, setForm] = useState({ key: '', emoji: '', label: '', tagline: '', hook: '', color: 'slate' })
+  const [expanded, setExpanded] = useState<string | null>(null)
+
+  const load = () => {
+    setLoading(true)
+    adminApi.getTopicCategories()
+      .then(r => setTopics(r.data || []))
+      .catch(() => toast.error('Failed to load topics'))
+      .finally(() => setLoading(false))
+  }
+
+  useEffect(() => { load() }, [])
+
+  const addTopic = async (e: React.FormEvent) => {
+    e.preventDefault()
+    try {
+      await adminApi.addTopicCategory(form)
+      toast.success(`Topic "${form.label}" added!`)
+      setForm({ key: '', emoji: '', label: '', tagline: '', hook: '', color: 'slate' })
+      load()
+    } catch {
+      toast.error('Failed to add topic (key may already exist)')
+    }
+  }
+
+  const deleteTopic = async (key: string, label: string, isBuiltin: boolean) => {
+    const msg = isBuiltin
+      ? `Hide "${label}" from the non-technical feed? (Can be restored later)`
+      : `Permanently delete custom topic "${label}"?`
+    if (!confirm(msg)) return
+    try {
+      await adminApi.deleteTopicCategory(key)
+      toast.success(isBuiltin ? `"${label}" hidden` : `"${label}" deleted`)
+      load()
+    } catch {
+      toast.error('Failed to delete topic')
+    }
+  }
+
+  const restoreTopic = async (key: string, label: string) => {
+    try {
+      await adminApi.restoreTopicCategory(key)
+      toast.success(`"${label}" restored`)
+      load()
+    } catch {
+      toast.error('Failed to restore topic')
+    }
+  }
+
+  const colorDot: Record<string, string> = {
+    blue:'bg-blue-400', pink:'bg-pink-400', orange:'bg-orange-400', green:'bg-green-400',
+    red:'bg-red-400', cyan:'bg-cyan-400', yellow:'bg-yellow-400', purple:'bg-purple-400',
+    emerald:'bg-emerald-400', slate:'bg-slate-400',
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-xl font-bold text-white">Topic Categories</h1>
+        <p className="text-sm text-muted mt-1">
+          These are the non-technical categories shown to public readers — Medicine, Robotics, etc.
+          Each category groups papers and shows a journalist narrative hook on the landing page.
+        </p>
+      </div>
+
+      {/* Stats row */}
+      {!loading && (
+        <div className="grid grid-cols-3 gap-3">
+          {[
+            { label: 'Total topics', value: topics.length },
+            { label: 'Visible', value: topics.filter(t => t.is_visible).length },
+            { label: 'Total papers classified', value: topics.reduce((s, t) => s + t.paper_count, 0).toLocaleString() },
+          ].map(({ label, value }) => (
+            <div key={label} className="bg-surface border border-accent/15 rounded-xl p-3 text-center">
+              <p className="text-xl font-bold text-white">{value}</p>
+              <p className="text-xs text-muted">{label}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Topic list */}
+      <div className="bg-surface border border-accent/15 rounded-2xl overflow-hidden">
+        <div className="px-5 py-3 border-b border-accent/10 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-white">All Categories</h2>
+          <span className="text-xs text-muted">{topics.filter(t => t.is_visible).length} visible / {topics.length} total</span>
+        </div>
+        {loading ? (
+          <div className="p-8 flex justify-center"><Loader2 size={20} className="animate-spin text-muted" /></div>
+        ) : (
+          <div className="divide-y divide-accent/5">
+            {topics.map(t => (
+              <div key={t.key} className={cn('transition-colors', !t.is_visible && 'opacity-40')}>
+                <div
+                  className="flex items-center gap-3 px-4 py-3 hover:bg-surface-2 cursor-pointer"
+                  onClick={() => setExpanded(expanded === t.key ? null : t.key)}
+                >
+                  <span className="text-xl w-7 text-center shrink-0">{t.emoji}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold text-white">{t.label}</span>
+                      {!t.is_builtin && (
+                        <span className="text-[9px] bg-accent/15 text-accent-2 border border-accent/20 rounded-full px-1.5 py-0.5 font-bold uppercase tracking-wide">custom</span>
+                      )}
+                      {!t.is_visible && (
+                        <span className="text-[9px] bg-red-500/15 text-red-400 border border-red-500/20 rounded-full px-1.5 py-0.5 font-bold uppercase tracking-wide">hidden</span>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted truncate">{t.tagline}</p>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <div className={cn('w-2 h-2 rounded-full shrink-0', colorDot[t.color] || 'bg-slate-400')} />
+                    <span className="text-xs text-muted tabular-nums">{t.paper_count} papers</span>
+                    {t.is_visible ? (
+                      <button
+                        onClick={e => { e.stopPropagation(); deleteTopic(t.key, t.label, t.is_builtin) }}
+                        className="p-1.5 text-muted hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-all"
+                        title={t.is_builtin ? 'Hide from feed' : 'Delete'}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    ) : (
+                      <button
+                        onClick={e => { e.stopPropagation(); restoreTopic(t.key, t.label) }}
+                        className="p-1.5 text-muted hover:text-green-400 hover:bg-green-400/10 rounded-lg transition-all text-xs"
+                        title="Restore"
+                      >
+                        ↩
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {/* Expandable hook preview */}
+                {expanded === t.key && (
+                  <div className="px-5 pb-4 pt-1 bg-surface-2 space-y-2">
+                    <p className="text-xs text-muted font-semibold uppercase tracking-wide">Landing page hook</p>
+                    <p className="text-sm text-white/80 leading-relaxed">{t.hook || <span className="text-muted italic">No hook set</span>}</p>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Add custom topic */}
+      <form onSubmit={addTopic} className="bg-surface border border-accent/15 rounded-2xl p-5 space-y-4">
+        <h2 className="text-sm font-semibold text-white">Add Custom Topic</h2>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          <input value={form.key} onChange={e => setForm({ ...form, key: e.target.value })}
+            placeholder="Key (e.g. Quantum)" required
+            className="bg-surface-2 border border-accent/20 rounded-xl px-3 py-2 text-sm text-white placeholder:text-muted focus:outline-none focus:border-accent/50" />
+          <input value={form.emoji} onChange={e => setForm({ ...form, emoji: e.target.value })}
+            placeholder="Emoji (e.g. ⚛️)" required
+            className="bg-surface-2 border border-accent/20 rounded-xl px-3 py-2 text-sm text-white placeholder:text-muted focus:outline-none focus:border-accent/50" />
+          <input value={form.label} onChange={e => setForm({ ...form, label: e.target.value })}
+            placeholder="Label (e.g. Quantum Computing)" required
+            className="bg-surface-2 border border-accent/20 rounded-xl px-3 py-2 text-sm text-white placeholder:text-muted focus:outline-none focus:border-accent/50" />
+          <input value={form.tagline} onChange={e => setForm({ ...form, tagline: e.target.value })}
+            placeholder="Short tagline for the card" required
+            className="col-span-2 bg-surface-2 border border-accent/20 rounded-xl px-3 py-2 text-sm text-white placeholder:text-muted focus:outline-none focus:border-accent/50" />
+          <select value={form.color} onChange={e => setForm({ ...form, color: e.target.value })}
+            className="bg-surface-2 border border-accent/20 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-accent/50">
+            {TOPIC_COLORS.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </div>
+        <textarea value={form.hook} onChange={e => setForm({ ...form, hook: e.target.value })}
+          placeholder="Journalist narrative hook shown on the landing page (2-3 sentences, plain English)" required rows={3}
+          className="w-full bg-surface-2 border border-accent/20 rounded-xl px-3 py-2 text-sm text-white placeholder:text-muted focus:outline-none focus:border-accent/50 resize-none" />
+        <button type="submit"
+          className="flex items-center gap-1.5 px-4 py-2 bg-accent/20 hover:bg-accent/30 border border-accent/30 text-accent-2 text-sm font-medium rounded-xl transition-all">
+          <Plus size={14} /> Add Topic
+        </button>
+      </form>
+    </div>
+  )
+}
+
 
 // ── Subjects ──────────────────────────────────────────────────────────────────
 
@@ -1986,6 +2215,7 @@ export function AdminPage() {
             <Route path="analysis" element={<AnalysisAdmin />} />
             <Route path="papers" element={<PapersAdmin />} />
             <Route path="keywords" element={<KeywordsAdmin />} />
+            <Route path="topics" element={<TopicsAdmin />} />
             <Route path="subjects" element={<SubjectsAdmin />} />
             <Route path="users" element={<UsersAdmin />} />
             <Route path="config" element={<ConfigAdmin />} />

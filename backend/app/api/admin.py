@@ -27,6 +27,14 @@ class SubjectCreate(BaseModel):
 class ManualPaperAdd(BaseModel):
     arxiv_id: str
 
+class TopicCategoryCreate(BaseModel):
+    key: str          # e.g. "Quantum"
+    emoji: str        # e.g. "⚛️"
+    label: str        # e.g. "Quantum Computing"
+    tagline: str      # short subtitle shown on card
+    hook: str         # journalist narrative hook shown on landing page
+    color: str = "slate"  # tailwind colour name
+
 
 @router.get("/dashboard")
 async def dashboard(db: TursoClient = Depends(get_db), _: dict = Depends(require_admin)):
@@ -334,6 +342,156 @@ async def trigger_rich_hooks(
     batch = min(max(batch, 1), 500)
     background_tasks.add_task(generate_rich_journalist_hooks, batch, force)
     return {"status": "started", "batch_size": batch, "force": force}
+
+
+@router.get("/rich-hooks-status")
+async def get_rich_hooks_status(db: TursoClient = Depends(get_db), _: dict = Depends(require_admin)):
+    """How many papers have rich journalist hooks vs still needing them."""
+    total = await db.count("papers", "is_deleted=0 AND is_duplicate=0")
+    with_hooks = await db.count(
+        "papers",
+        "is_deleted=0 AND is_duplicate=0 AND ai_journalist_hook IS NOT NULL AND LENGTH(ai_journalist_hook) >= 500"
+    )
+    missing = total - with_hooks
+    return {
+        "total": total,
+        "with_rich_hooks": with_hooks,
+        "missing_hooks": missing,
+        "percent": round(with_hooks / total * 100) if total > 0 else 0,
+    }
+
+
+@router.get("/topic-categories")
+async def get_topic_categories(db: TursoClient = Depends(get_db), _: dict = Depends(require_admin)):
+    """
+    Returns all topic categories (built-in + custom) with paper counts and visibility.
+    """
+    from app.api.feed import _TOPIC_META
+    from app.core.database import get_system_config
+
+    # Load hidden keys and custom entries from system_config
+    hidden_raw = await get_system_config("TOPIC_HIDDEN_KEYS") or "[]"
+    custom_raw = await get_system_config("TOPIC_CUSTOM_ENTRIES") or "[]"
+    try:
+        hidden_keys = set(json.loads(hidden_raw))
+    except Exception:
+        hidden_keys = set()
+    try:
+        custom_entries = json.loads(custom_raw)
+    except Exception:
+        custom_entries = []
+
+    # Paper counts per topic
+    count_rows = await db.fetchall(
+        "SELECT ai_topic_category, COUNT(*) as cnt FROM papers "
+        "WHERE is_deleted=0 AND is_duplicate=0 AND ai_topic_category IS NOT NULL "
+        "GROUP BY ai_topic_category"
+    )
+    counts = {r["ai_topic_category"]: r["cnt"] for r in count_rows}
+
+    # Build merged list: built-in first, then custom
+    result = []
+    for key, meta in _TOPIC_META.items():
+        result.append({
+            "key": key,
+            "emoji": meta["emoji"],
+            "label": meta["label"],
+            "tagline": meta["tagline"],
+            "hook": meta.get("hook", ""),
+            "color": meta.get("color", "slate"),
+            "paper_count": counts.get(key, 0),
+            "is_builtin": True,
+            "is_visible": key not in hidden_keys,
+        })
+    for entry in custom_entries:
+        key = entry.get("key", "")
+        result.append({
+            **entry,
+            "paper_count": counts.get(key, 0),
+            "is_builtin": False,
+            "is_visible": key not in hidden_keys,
+        })
+    return result
+
+
+@router.post("/topic-categories")
+async def add_topic_category(
+    body: TopicCategoryCreate,
+    db: TursoClient = Depends(get_db),
+    _: dict = Depends(require_admin),
+):
+    """Add a custom non-technical topic category."""
+    from app.core.database import get_system_config, set_system_config
+    raw = await get_system_config("TOPIC_CUSTOM_ENTRIES") or "[]"
+    try:
+        entries = json.loads(raw)
+    except Exception:
+        entries = []
+    # Prevent duplicate keys
+    if any(e.get("key") == body.key for e in entries):
+        raise HTTPException(status_code=400, detail="Topic key already exists")
+    entries.append({
+        "key": body.key,
+        "emoji": body.emoji,
+        "label": body.label,
+        "tagline": body.tagline,
+        "hook": body.hook,
+        "color": body.color,
+    })
+    await set_system_config("TOPIC_CUSTOM_ENTRIES", json.dumps(entries), "Custom topic categories for non-technical feed")
+    return {"status": "added", "key": body.key}
+
+
+@router.delete("/topic-categories/{key}")
+async def delete_topic_category(
+    key: str,
+    db: TursoClient = Depends(get_db),
+    _: dict = Depends(require_admin),
+):
+    """
+    Hide a built-in topic or permanently delete a custom one.
+    """
+    from app.api.feed import _TOPIC_META
+    from app.core.database import get_system_config, set_system_config
+
+    if key in _TOPIC_META:
+        # Built-in: add to hidden list
+        raw = await get_system_config("TOPIC_HIDDEN_KEYS") or "[]"
+        try:
+            hidden = json.loads(raw)
+        except Exception:
+            hidden = []
+        if key not in hidden:
+            hidden.append(key)
+        await set_system_config("TOPIC_HIDDEN_KEYS", json.dumps(hidden), "Hidden built-in topic categories")
+    else:
+        # Custom: remove from custom entries
+        raw = await get_system_config("TOPIC_CUSTOM_ENTRIES") or "[]"
+        try:
+            entries = json.loads(raw)
+        except Exception:
+            entries = []
+        entries = [e for e in entries if e.get("key") != key]
+        await set_system_config("TOPIC_CUSTOM_ENTRIES", json.dumps(entries), "Custom topic categories for non-technical feed")
+
+    return {"status": "deleted", "key": key}
+
+
+@router.patch("/topic-categories/{key}/restore")
+async def restore_topic_category(
+    key: str,
+    _: dict = Depends(require_admin),
+):
+    """Restore a hidden built-in topic category."""
+    from app.core.database import get_system_config, set_system_config
+    raw = await get_system_config("TOPIC_HIDDEN_KEYS") or "[]"
+    try:
+        hidden = json.loads(raw)
+    except Exception:
+        hidden = []
+    hidden = [k for k in hidden if k != key]
+    await set_system_config("TOPIC_HIDDEN_KEYS", json.dumps(hidden), "Hidden built-in topic categories")
+    return {"status": "restored", "key": key}
 
 
 @router.get("/daily-fetch")
