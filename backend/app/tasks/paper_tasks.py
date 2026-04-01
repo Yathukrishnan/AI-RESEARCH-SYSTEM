@@ -885,7 +885,7 @@ rich_hooks_progress: dict = {
 }
 
 
-async def generate_rich_journalist_hooks(batch_size: int = 2000, force: bool = False) -> int:
+async def generate_rich_journalist_hooks(batch_size: int = 5000, force: bool = False) -> int:
     """
     Generate rich Wired/Atlantic-style journalist hooks (5-7 sentences, 200-350 words)
     for all public-facing papers and save to ai_journalist_hook column.

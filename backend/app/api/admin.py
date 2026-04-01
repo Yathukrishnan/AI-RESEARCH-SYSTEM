@@ -339,7 +339,7 @@ async def trigger_rich_hooks(
     force=true regenerates all existing hooks (style refresh / backfill).
     """
     from app.tasks.paper_tasks import generate_rich_journalist_hooks
-    batch = min(max(batch, 1), 2000)
+    batch = min(max(batch, 1), 5000)
     background_tasks.add_task(generate_rich_journalist_hooks, batch, force)
     return {"status": "started", "batch_size": batch, "force": force}
 

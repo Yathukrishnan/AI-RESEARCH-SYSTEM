@@ -108,7 +108,7 @@ export const adminApi = {
   getServiceConfig: () => api.get('/admin/service-config'),
   triggerLandingContent: (batch = 100, force = false) =>
     api.post(`/admin/trigger-landing-content?batch=${batch}&force=${force}`),
-  triggerRichHooks: (batch = 2000, force = false) =>
+  triggerRichHooks: (batch = 5000, force = false) =>
     api.post(`/admin/trigger-rich-hooks?batch=${batch}&force=${force}`),
   getRichHooksProgress: () => api.get('/admin/rich-hooks-progress'),
   getRichHooksStatus: () => api.get('/admin/rich-hooks-status'),
