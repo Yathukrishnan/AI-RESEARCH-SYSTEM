@@ -651,7 +651,8 @@ Write ONLY the single sentence. No quotes. No labels."""
         if not self._api_key:
             return ""
 
-        source = ai_summary or abstract or ""
+        # Use whatever text is available — title alone is enough for a good hook
+        source = ai_summary or abstract or title or ""
         if not source:
             return ""
 
@@ -705,7 +706,7 @@ Write ONLY the narrative sentences. No title. No labels. No quotes around the te
                     json={
                         "model": self.model,
                         "messages": [{"role": "user", "content": prompt}],
-                        "max_tokens": 400,
+                        "max_tokens": 500,
                         "temperature": 0.72,
                     }
                 )
@@ -714,6 +715,8 @@ Write ONLY the narrative sentences. No title. No labels. No quotes around the te
                     # Strip any label prefix the model might sneak in
                     import re
                     text = re.sub(r'^(Hook|Title|Article|Report|Paper|Narrative|Opening)[:\-–]\s*', '', text, flags=re.IGNORECASE).strip()
+                    # Strip lines that look like "Paper: ..." or "Title: ..." at start
+                    text = re.sub(r'^\*?\*?[A-Za-z ]{1,12}:\*?\*?\s+(?=[A-Z])', '', text).strip()
                     if text and len(text) > 60:
                         return text if text.endswith('.') else text + '.'
         except Exception as e:

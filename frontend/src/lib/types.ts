@@ -299,8 +299,9 @@ export interface ReportData {
 }
 
 export interface TopicPageData {
-  papers: LandingPaper[]
+  papers: (LandingPaper & { is_pinned?: boolean })[]
   total: number
+  pinned_count?: number
   page: number
   has_more: boolean
   topic: string

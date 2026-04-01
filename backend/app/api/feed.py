@@ -8,7 +8,9 @@ Weekly logic:
   - Only papers with is_above_threshold = 1 appear in main sections
 """
 
+import hashlib
 import json
+import random
 import uuid
 from datetime import datetime, timezone, date
 from typing import Optional
@@ -964,13 +966,36 @@ async def get_topic_papers(
         if t == topic:
             matched.append(p)
 
-    limit = 24
-    offset = page * limit
-    page_papers = matched[offset: offset + limit]
+    # ── Daily rotation: top 10 pinned + daily-shuffled remainder ─────────────
+    # Top 10 by score never move — always shown first, marked is_pinned=True.
+    # Remaining papers are shuffled daily using a date+topic seed so every
+    # visitor on the same day sees the same order, but it changes tomorrow.
+    PINNED_COUNT = 10
+    ROTATE_PER_PAGE = 10   # rotating papers shown per page
+    TOTAL_PER_PAGE = PINNED_COUNT + ROTATE_PER_PAGE  # page 0 = 20
 
-    # ── Generate journalist hooks for page papers that lack one ───────────────
-    # Only runs for papers without ai_journalist_hook (≤120 chars = short hook_text).
-    # Parallel with semaphore=3 so page load stays fast.
+    pinned = [dict(p, is_pinned=True) for p in matched[:PINNED_COUNT]]
+    pool = matched[PINNED_COUNT:]
+
+    # Deterministic daily shuffle
+    seed_str = f"{date.today().isoformat()}:{topic}"
+    seed = int(hashlib.md5(seed_str.encode()).hexdigest(), 16) % (2 ** 31)
+    rng = random.Random(seed)
+    rotating = pool.copy()
+    rng.shuffle(rotating)
+    rotating = [dict(p, is_pinned=False) for p in rotating]
+
+    if page == 0:
+        page_papers = pinned + rotating[:ROTATE_PER_PAGE]
+        has_more = len(rotating) > ROTATE_PER_PAGE
+    else:
+        rot_offset = page * ROTATE_PER_PAGE
+        page_papers = rotating[rot_offset: rot_offset + ROTATE_PER_PAGE]
+        has_more = (rot_offset + ROTATE_PER_PAGE) < len(rotating)
+
+    # ── Generate journalist hooks for papers on this page that lack one ───────
+    # A "rich" hook is ≥120 chars. Short hook_text values are regenerated.
+    # Uses semaphore=4, awaited before response so every paper has a good hook.
     papers_needing_hooks = [
         p for p in page_papers
         if not p.get("ai_journalist_hook") or len(p.get("ai_journalist_hook", "")) < 120
@@ -980,8 +1005,8 @@ async def get_topic_papers(
             from app.services.ai_service import AIValidationService
             from app.core.config import settings
             _ai = AIValidationService(settings.OPENROUTER_API_KEY)
-            topic_label = _TOPIC_META.get(topic, {}).get("label", "AI Research")
-            sem = asyncio.Semaphore(3)
+            topic_label_str = _TOPIC_META.get(topic, {}).get("label", "AI Research")
+            sem = asyncio.Semaphore(4)
 
             async def _gen_hook(p: dict):
                 async with sem:
@@ -990,7 +1015,7 @@ async def get_topic_papers(
                             title=p.get("title", ""),
                             abstract=p.get("abstract") or p.get("ai_summary") or "",
                             ai_summary=p.get("ai_summary") or "",
-                            topic_label=topic_label,
+                            topic_label=topic_label_str,
                             hf_upvotes=int(p.get("hf_upvotes") or 0),
                             hn_points=int(p.get("hn_points") or 0),
                             citation_count=int(p.get("citation_count") or 0),
@@ -1016,8 +1041,9 @@ async def get_topic_papers(
     return {
         "papers": page_papers,
         "total": len(matched),
+        "pinned_count": len(pinned),
         "page": page,
-        "has_more": (offset + len(page_papers)) < len(matched),
+        "has_more": has_more,
         "topic": topic,
         "meta": _TOPIC_META.get(topic),
     }

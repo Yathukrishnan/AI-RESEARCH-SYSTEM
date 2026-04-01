@@ -14,7 +14,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Loader2, ArrowRight } from 'lucide-react'
+import { ArrowLeft, Loader2, ArrowRight, Pin } from 'lucide-react'
 import { Navbar } from '@/components/layout/Navbar'
 import { landingApi } from '@/lib/api'
 import { LandingPaper, TopicMeta } from '@/lib/types'
@@ -60,7 +60,7 @@ function ScorePill({ icon, value, title }: { icon: string; value: string; title:
 
 // ── A single story card ───────────────────────────────────────────────────────
 function StoryCard({ paper, index, color, onRead }: {
-  paper: LandingPaper
+  paper: LandingPaper & { is_pinned?: boolean }
   index: number
   color: string
   onRead: () => void
@@ -75,6 +75,7 @@ function StoryCard({ paper, index, color, onRead }: {
   const stars = paper.github_stars || 0
   const hIdx  = paper.h_index_max || 0
   const qual  = Math.round((paper.normalized_score || 0) * 100)
+  const isPinned = paper.is_pinned
 
   const fmt = (n: number) => n >= 1000 ? `${(n/1000).toFixed(1)}k` : String(n)
 
@@ -96,6 +97,15 @@ function StoryCard({ paper, index, color, onRead }: {
         <span className="font-mono text-sm text-muted/20 w-5 shrink-0 mt-1.5">{index + 1}</span>
 
         <div className="flex-1 min-w-0 space-y-3">
+
+          {/* Pinned badge — only for top-10 weekly papers */}
+          {isPinned && (
+            <div className="flex items-center gap-1.5">
+              <span className={cn('inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full border', c.text, 'bg-white/5 border-white/10')}>
+                <Pin size={8} /> Top Pick This Week
+              </span>
+            </div>
+          )}
 
           {/* THE HOOK — headline sentence big, rest smaller */}
           <div className="space-y-1.5">
@@ -149,7 +159,7 @@ export function TopicPage() {
   const { topic = 'General' } = useParams<{ topic: string }>()
   const navigate = useNavigate()
 
-  const [papers, setPapers] = useState<LandingPaper[]>([])
+  const [papers, setPapers] = useState<(LandingPaper & { is_pinned?: boolean })[]>([])
   const [meta, setMeta] = useState<TopicMeta | null>(null)
   const [topicHook, setTopicHook] = useState('')
   const [total, setTotal] = useState(0)
@@ -224,7 +234,7 @@ export function TopicPage() {
                 <div>
                   <h1 className={cn('text-2xl font-extrabold', c.text)}>{meta.label}</h1>
                   {total > 0 && (
-                    <p className="text-xs text-muted/60 mt-0.5">{total.toLocaleString()} papers this week</p>
+                    <p className="text-xs text-muted/60 mt-0.5">Top picks this week — updated daily</p>
                   )}
                 </div>
               </div>
@@ -267,15 +277,32 @@ export function TopicPage() {
         ) : (
           <>
             <div className="divide-y divide-white/0">
-              {papers.map((p, i) => (
-                <StoryCard
-                  key={p.id}
-                  paper={p}
-                  index={i}
-                  color={color}
-                  onRead={() => navigate(`/report/${p.id}`)}
-                />
-              ))}
+              {papers.map((p, i) => {
+                // Insert section divider between pinned and rotating papers
+                const prevPinned = i > 0 && papers[i - 1].is_pinned
+                const currRotating = !p.is_pinned
+                const showDivider = prevPinned && currRotating
+
+                return (
+                  <div key={p.id}>
+                    {showDivider && (
+                      <div className="flex items-center gap-3 py-5">
+                        <div className="flex-1 h-px bg-white/8" />
+                        <span className="text-[10px] text-muted/40 font-semibold uppercase tracking-widest whitespace-nowrap">
+                          More stories — refreshed daily
+                        </span>
+                        <div className="flex-1 h-px bg-white/8" />
+                      </div>
+                    )}
+                    <StoryCard
+                      paper={p}
+                      index={i}
+                      color={color}
+                      onRead={() => navigate(`/report/${p.id}`)}
+                    />
+                  </div>
+                )
+              })}
             </div>
 
             {/* Pagination */}
