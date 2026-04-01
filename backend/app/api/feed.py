@@ -985,10 +985,7 @@ async def get_report(paper_id: int, db: TursoClient = Depends(get_db)):
     Includes: lay summary, key findings, why important, social proof, related papers.
     """
     row = await db.fetchone(
-        f"SELECT {_LANDING_SELECT}, "
-        "hf_upvotes, hn_points, hn_comments, citation_velocity, star_velocity, "
-        "rising_score, gem_score, platform_score, score_history "
-        "FROM papers WHERE rowid=? AND is_deleted=0",
+        f"SELECT {_LANDING_SELECT} FROM papers WHERE rowid=? AND is_deleted=0",
         [paper_id]
     )
     if not row:
@@ -996,6 +993,49 @@ async def get_report(paper_id: int, db: TursoClient = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Paper not found")
 
     paper = _parse_landing(dict(row))
+
+    # ── Derive topic early (needed for hook generation below) ─────────────────
+    topic_early = (
+        paper.get("ai_topic_category")
+        or _derive_topic(
+            paper.get("primary_category", ""),
+            json.dumps(paper.get("categories", [])),
+            paper.get("abstract") or paper.get("ai_summary") or "",
+        )
+    )
+    topic_label_early = _TOPIC_META.get(topic_early, {}).get("label", "AI Research")
+
+    # ── Generate rich report-page journalist hook on-the-fly ──────────────────
+    # This is a 2-3 sentence magazine opener, richer than the brief topic-page hook.
+    # We generate it fresh each request (fast ~1s) and cache via ai_journalist_hook.
+    _report_hook = paper.get("ai_journalist_hook") or ""
+    if not _report_hook:
+        try:
+            from app.services.ai_service import AIValidationService
+            from app.core.config import settings
+            _ai = AIValidationService(settings.OPENROUTER_API_KEY)
+            _report_hook = await _ai.generate_report_hook(
+                title=paper.get("title", ""),
+                abstract=paper.get("abstract") or paper.get("ai_summary") or "",
+                ai_summary=paper.get("ai_summary") or "",
+                topic_label=topic_label_early,
+                hf_upvotes=int(paper.get("hf_upvotes") or 0),
+                hn_points=int(paper.get("hn_points") or 0),
+                citation_count=int(paper.get("citation_count") or 0),
+                github_stars=int(paper.get("github_stars") or 0),
+            )
+            if _report_hook:
+                paper["ai_journalist_hook"] = _report_hook
+                # Persist so next request is instant (no AI call needed)
+                try:
+                    await db.execute(
+                        "UPDATE papers SET ai_journalist_hook=? WHERE rowid=?",
+                        [_report_hook, paper_id]
+                    )
+                except Exception:
+                    pass
+        except Exception:
+            pass  # fall back to hook_text / title silently
 
     # Social proof block — structured for easy display
     hf = int(paper.get("hf_upvotes") or 0)
@@ -1030,15 +1070,8 @@ async def get_report(paper_id: int, db: TursoClient = Depends(get_db)):
     else:
         trend_reason = "Curated by our scoring system as a high-quality research paper worth reading."
 
-    # Derive topic (use saved value if available, else derive from arXiv)
-    topic = (
-        paper.get("ai_topic_category")
-        or _derive_topic(
-            paper.get("primary_category", ""),
-            json.dumps(paper.get("categories", [])),
-            paper.get("abstract") or paper.get("ai_summary") or "",
-        )
-    )
+    # Topic was already derived above (reuse)
+    topic = topic_early
     paper["_derived_topic"] = topic
 
     # Related papers — fetch pool, filter by same derived topic

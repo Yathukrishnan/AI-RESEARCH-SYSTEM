@@ -631,6 +631,85 @@ Write ONLY the single sentence. No quotes. No labels."""
 
         return ""
 
+    async def generate_report_hook(
+        self,
+        title: str,
+        abstract: str,
+        ai_summary: str = "",
+        topic_label: str = "",
+        hf_upvotes: int = 0,
+        hn_points: int = 0,
+        citation_count: int = 0,
+        github_stars: int = 0,
+    ) -> str:
+        """
+        Generate a rich, multi-sentence journalist narrative for the /report/:id page.
+        This is the big headline + opener — NOT the brief topic-page hook.
+        Written like a Wired or Atlantic opening paragraph: draws in a non-technical reader,
+        names the stakes, and hints at why this specific discovery matters right now.
+        """
+        if not self._api_key:
+            return ""
+
+        source = ai_summary or abstract or ""
+        if not source:
+            return ""
+
+        # Build social proof context for richer narrative
+        signals = []
+        if hf_upvotes > 0:
+            signals.append(f"{hf_upvotes:,} AI engineers bookmarked it on HuggingFace")
+        if hn_points > 0:
+            signals.append(f"{hn_points} points on Hacker News")
+        if citation_count > 0:
+            signals.append(f"cited by {citation_count} other papers")
+        if github_stars > 0:
+            signals.append(f"{github_stars:,} GitHub stars")
+        signal_str = ("; ".join(signals) + ".") if signals else ""
+
+        prompt = f"""You are a senior editor at Wired or The Atlantic writing the opening of a feature article about an AI research paper.
+Your reader is an intelligent, curious adult — not a scientist. They read quality journalism, not academic papers.
+
+Topic: {topic_label}
+Paper title: {title[:200]}
+What it says: {source[:700]}
+{"Community signal: " + signal_str if signal_str else ""}
+
+Write 2–3 sentences (50–90 words total) that:
+1. Open with the discovery or shift — what changed, what is now possible, or what we learned
+2. Make clear WHY a normal person outside academia should care about this
+3. If there is strong community signal, weave it in naturally (e.g. "tens of thousands of engineers immediately took notice")
+
+Rules:
+- No bullet points, no headers — flowing prose only
+- No technical jargon or acronyms without plain-English explanation
+- Do NOT start with "Researchers", "Scientists", "A new study", or "This paper"
+- Write as if you are opening a gripping magazine feature
+- Make it feel urgent and human — not like a press release
+
+Write ONLY the 2–3 sentences. No quotes. No labels."""
+
+        try:
+            async with httpx.AsyncClient(timeout=25) as client:
+                resp = await client.post(
+                    f"{self.base_url}/chat/completions",
+                    headers={"Authorization": f"Bearer {self._api_key}", "Content-Type": "application/json"},
+                    json={
+                        "model": self.model,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "max_tokens": 160,
+                        "temperature": 0.75,
+                    }
+                )
+                if resp.status_code == 200:
+                    text = resp.json()["choices"][0]["message"]["content"].strip().strip('"\'')
+                    if text and len(text) > 40:
+                        return text if text.endswith('.') else text + '.'
+        except Exception as e:
+            logger.warning(f"Report hook generation error: {e}")
+
+        return ""
+
     async def generate_topic_category(
         self, title: str, abstract: str, arxiv_categories: list
     ) -> str:
