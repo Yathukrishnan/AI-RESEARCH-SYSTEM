@@ -178,7 +178,12 @@ async def _score_paper(paper: Dict, ai_svc: AIValidationService, keywords: List[
     """Score a single paper."""
     async with semaphore:
         try:
-            text = f"{paper.get('title', '')} {paper.get('abstract', '')}"
+            # Normalise published_at: some rows still have only published_date
+            if not paper.get("published_at") and paper.get("published_date"):
+                paper = dict(paper)
+                paper["published_at"] = paper["published_date"]
+
+            text = f"{paper.get('title') or ''} {paper.get('abstract') or ''}"
             kw_score = compute_tfidf_keyword_score(text, keywords)
 
             # Use existing AI scores if already validated
@@ -189,23 +194,36 @@ async def _score_paper(paper: Dict, ai_svc: AIValidationService, keywords: List[
             hook_text = paper.get("hook_text") or ""
 
             if ai_relevance == 0:
-                if settings.OPENROUTER_API_KEY:
-                    result = await ai_svc.validate_paper(
-                        paper.get("title", ""),
-                        paper.get("abstract", ""),
-                        keywords
-                    )
-                else:
+                result = None
+                try:
+                    if settings.OPENROUTER_API_KEY:
+                        result = await ai_svc.validate_paper(
+                            paper.get("title", "") or "",
+                            paper.get("abstract", "") or "",
+                            keywords
+                        )
+                    else:
+                        result = ai_svc._tfidf_fallback(
+                            paper.get("title", "") or "",
+                            paper.get("abstract", "") or "",
+                            keywords
+                        )
+                except Exception as e:
+                    logger.warning(f"AI validation failed for paper {paper.get('id')}: {e}")
+
+                if not result or not isinstance(result, dict):
                     result = ai_svc._tfidf_fallback(
-                        paper.get("title", ""),
-                        paper.get("abstract", ""),
+                        paper.get("title", "") or "",
+                        paper.get("abstract", "") or "",
                         keywords
                     )
-                ai_relevance = result.get("ai_relevance_score", kw_score)
-                ai_impact = result.get("ai_impact_score", kw_score * 0.8)
-                ai_tags = json.dumps(result.get("ai_topic_tags", []))
-                ai_summary = result.get("ai_summary", "")
-                hook_text = result.get("hook", "")
+
+                ai_relevance = result.get("ai_relevance_score") or kw_score
+                ai_impact = result.get("ai_impact_score") or kw_score * 0.8
+                raw_tags = result.get("ai_topic_tags") or []
+                ai_tags = json.dumps(raw_tags if isinstance(raw_tags, list) else [])
+                ai_summary = result.get("ai_summary") or ""
+                hook_text = result.get("hook") or ""
 
             enriched = dict(paper)
             enriched["ai_relevance_score"] = ai_relevance

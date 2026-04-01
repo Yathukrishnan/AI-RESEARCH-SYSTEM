@@ -1007,10 +1007,11 @@ async def get_report(paper_id: int, db: TursoClient = Depends(get_db)):
     topic_label_early = _TOPIC_META.get(topic_early, {}).get("label", "AI Research")
 
     # ── Generate rich report-page journalist hook on-the-fly ──────────────────
-    # This is a 2-3 sentence magazine opener, richer than the brief topic-page hook.
-    # We generate it fresh each request (fast ~1s) and cache via ai_journalist_hook.
+    # Generate if: no hook stored, OR stored hook is short (≤120 chars = just hook_text,
+    # not a real magazine opener). Rich hooks are 150-250 words — store and reuse.
     _report_hook = paper.get("ai_journalist_hook") or ""
-    if not _report_hook:
+    _needs_regen = not _report_hook or len(_report_hook) < 120
+    if _needs_regen:
         try:
             from app.services.ai_service import AIValidationService
             from app.core.config import settings

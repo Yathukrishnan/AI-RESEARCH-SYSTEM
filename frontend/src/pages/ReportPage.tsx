@@ -356,8 +356,15 @@ export function ReportPage() {
   // The journalist narrative hook — never the paper title
   const hook = getHook(paper)
 
-  // Split hook into sentences for improved readability
-  const hookSentences = hook.split(/(?<=[.!?])\s+/).filter(Boolean)
+  // Split hook into flowing sentences for newspaper-style hierarchy.
+  // Use a simple sentence split that doesn't break on abbreviations.
+  const hookSentences = hook
+    .split(/(?<=[.!?])\s+(?=[A-Z"'])/)
+    .map(s => s.trim())
+    .filter(Boolean)
+
+  // Rich hook = 3+ sentences. Short hook = 1-2 sentences (topic-page style).
+  const isRichHook = hookSentences.length >= 3
 
   // Plain English summary below the hook
   const abstract = paper.ai_lay_summary
@@ -413,25 +420,30 @@ export function ReportPage() {
             )}
           </div>
 
-          {/* The journalist narrative — displayed as flowing prose */}
-          {/* First sentence is larger; rest is regular body size */}
-          <div className="space-y-3">
-            {hookSentences.length > 0 && (
-              <p className="text-2xl md:text-3xl font-bold text-white leading-snug tracking-tight">
+          {/* The journalist narrative — newspaper hierarchy */}
+          {isRichHook ? (
+            // Multi-sentence rich hook: first sentence big, rest cascades down
+            <div className="space-y-3">
+              <p className="text-2xl md:text-3xl font-extrabold text-white leading-snug tracking-tight">
                 {hookSentences[0]}
               </p>
-            )}
-            {hookSentences.length > 1 && (
-              <p className="text-base md:text-lg text-white/80 leading-relaxed font-medium">
-                {hookSentences.slice(1, 3).join(' ')}
-              </p>
-            )}
-            {hookSentences.length > 3 && (
-              <p className="text-sm text-slate-400/80 leading-relaxed">
-                {hookSentences.slice(3).join(' ')}
-              </p>
-            )}
-          </div>
+              {hookSentences.length > 1 && (
+                <p className="text-base md:text-lg text-white/80 leading-relaxed font-medium">
+                  {hookSentences.slice(1, 3).join(' ')}
+                </p>
+              )}
+              {hookSentences.length > 3 && (
+                <p className="text-sm text-slate-400/75 leading-relaxed">
+                  {hookSentences.slice(3).join(' ')}
+                </p>
+              )}
+            </div>
+          ) : (
+            // Short hook (1-2 sentences): show full-width, then abstract does the heavy lifting
+            <p className="text-2xl md:text-3xl font-extrabold text-white leading-snug tracking-tight">
+              {hook}
+            </p>
+          )}
 
           {/* Plain English abstract */}
           {abstract && (
