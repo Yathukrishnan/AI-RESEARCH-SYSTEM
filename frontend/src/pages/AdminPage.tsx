@@ -1221,6 +1221,7 @@ function TopicMappingAdmin() {
   const [mapping, setMapping] = useState<Record<string, any>>({})
   const [loading, setLoading] = useState(true)
   const [openTopic, setOpenTopic] = useState<string | null>(null)
+  const [assigning, setAssigning] = useState(false)
 
   const load = () => {
     setLoading(true)
@@ -1231,6 +1232,20 @@ function TopicMappingAdmin() {
   }
 
   useEffect(() => { load() }, [])
+
+  const autoAssign = async () => {
+    if (!confirm('Auto-assign all subjects and keywords to topics based on arXiv category rules? This will overwrite current assignments.')) return
+    setAssigning(true)
+    try {
+      const r = await adminApi.autoAssignTopics()
+      toast.success(`Done — ${r.data.subjects_updated} subjects, ${r.data.keywords_updated} keywords assigned`)
+      load()
+    } catch {
+      toast.error('Auto-assign failed')
+    } finally {
+      setAssigning(false)
+    }
+  }
 
   const assignSubject = async (id: number, topic: string) => {
     try {
@@ -1269,11 +1284,21 @@ function TopicMappingAdmin() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-bold text-white">Subjects & Keywords by Topic</h1>
-        <p className="text-sm text-muted mt-1">
-          See which arXiv subjects and scoring keywords belong to each non-technical topic. Click a topic to expand, then reassign or delete items.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-bold text-white">Subjects & Keywords by Topic</h1>
+          <p className="text-sm text-muted mt-1">
+            See which arXiv subjects and scoring keywords belong to each non-technical topic. Click a topic to expand, then reassign or delete items.
+          </p>
+        </div>
+        <button
+          onClick={autoAssign}
+          disabled={assigning || loading}
+          className="flex items-center gap-1.5 px-4 py-2 bg-teal-500/15 hover:bg-teal-500/25 border border-teal-500/30 text-teal-400 text-sm font-medium rounded-xl transition-all shrink-0 disabled:opacity-50"
+        >
+          {assigning ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
+          Auto-assign all
+        </button>
       </div>
 
       {loading ? (
