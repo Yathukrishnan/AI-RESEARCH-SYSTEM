@@ -218,6 +218,9 @@ ENSURE_COLUMNS = [
     ("keywords", "category",           "TEXT",    "'general'"),
     ("keywords", "is_active",          "INTEGER", "1"),
     ("keywords", "created_at",         "TEXT",    "NULL"),
+    ("keywords", "topic_category",     "TEXT",    "'General'"),
+    # arxiv_subjects migrations
+    ("arxiv_subjects", "topic_category", "TEXT",  "'General'"),
     # papers columns that may be missing in existing Turso table
     ("papers", "published_at",         "TEXT",    "NULL"),
     ("papers", "categories",           "TEXT",    "NULL"),

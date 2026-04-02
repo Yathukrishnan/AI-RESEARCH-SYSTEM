@@ -5,7 +5,7 @@ import {
   LayoutDashboard, FileText, Settings, Tag, RefreshCw, Plus, Trash2,
   Play, ArrowLeft, Database, TrendingUp, Brain, CheckCircle, Loader2,
   Activity, Users, Eye, Copy, Shield, ShieldOff, Wifi, WifiOff, Zap,
-  Clock, BookOpen, Star, AlertTriangle, Download, Layers, Globe
+  Clock, BookOpen, Star, AlertTriangle, Download, Layers, Globe, Network
 } from 'lucide-react'
 import { adminApi } from '@/lib/api'
 import { AdminStats, ConfigItem, Keyword, Subject, AnalysisLog, AdminUser } from '@/lib/types'
@@ -22,6 +22,7 @@ function AdminSidebar() {
     { to: '/admin/papers', label: 'Papers', icon: FileText },
     { to: '/admin/keywords', label: 'Keywords', icon: Tag },
     { to: '/admin/topics', label: 'Topics', icon: Globe },
+    { to: '/admin/mapping', label: 'Mapping', icon: Network },
     { to: '/admin/subjects', label: 'Subjects', icon: Layers },
     { to: '/admin/users', label: 'Users', icon: Users },
     { to: '/admin/config', label: 'Config', icon: Settings },
@@ -1214,6 +1215,160 @@ function TopicsAdmin() {
 }
 
 
+// ── Topic Mapping — subjects & keywords grouped by topic ─────────────────────
+
+function TopicMappingAdmin() {
+  const [mapping, setMapping] = useState<Record<string, any>>({})
+  const [loading, setLoading] = useState(true)
+  const [openTopic, setOpenTopic] = useState<string | null>(null)
+
+  const load = () => {
+    setLoading(true)
+    adminApi.getTopicsMapping()
+      .then(r => setMapping(r.data || {}))
+      .catch(() => toast.error('Failed to load mapping'))
+      .finally(() => setLoading(false))
+  }
+
+  useEffect(() => { load() }, [])
+
+  const assignSubject = async (id: number, topic: string) => {
+    try {
+      await adminApi.setSubjectTopic(id, topic)
+      toast.success('Subject moved')
+      load()
+    } catch { toast.error('Failed') }
+  }
+
+  const assignKeyword = async (id: number, topic: string) => {
+    try {
+      await adminApi.setKeywordTopic(id, topic)
+      toast.success('Keyword moved')
+      load()
+    } catch { toast.error('Failed') }
+  }
+
+  const deleteSubject = async (id: number) => {
+    if (!confirm('Delete this subject?')) return
+    try {
+      await adminApi.deleteSubject(id)
+      toast.success('Deleted')
+      load()
+    } catch { toast.error('Failed') }
+  }
+
+  const deleteKeyword = async (id: number) => {
+    try {
+      await adminApi.deleteKeyword(id)
+      toast.success('Deleted')
+      load()
+    } catch { toast.error('Failed') }
+  }
+
+  const topicKeys = Object.keys(mapping)
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-xl font-bold text-white">Subjects & Keywords by Topic</h1>
+        <p className="text-sm text-muted mt-1">
+          See which arXiv subjects and scoring keywords belong to each non-technical topic. Click a topic to expand, then reassign or delete items.
+        </p>
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-12"><Loader2 size={22} className="animate-spin text-muted" /></div>
+      ) : (
+        <div className="space-y-3">
+          {topicKeys.map(topicKey => {
+            const t = mapping[topicKey]
+            const isOpen = openTopic === topicKey
+            const totalItems = (t.subjects?.length || 0) + (t.keywords?.length || 0)
+            return (
+              <div key={topicKey} className="bg-surface border border-accent/15 rounded-2xl overflow-hidden">
+                <button
+                  className="w-full flex items-center gap-3 px-5 py-4 hover:bg-surface-2 transition-colors"
+                  onClick={() => setOpenTopic(isOpen ? null : topicKey)}
+                >
+                  <span className="text-xl w-7 text-center shrink-0">{t.emoji}</span>
+                  <span className="text-sm font-semibold text-white flex-1 text-left">{t.label}</span>
+                  <span className="text-xs text-muted">
+                    {t.subjects?.length || 0} subjects · {t.keywords?.length || 0} keywords
+                  </span>
+                  <span className="text-muted text-sm">{isOpen ? '▲' : '▼'}</span>
+                </button>
+
+                {isOpen && (
+                  <div className="border-t border-accent/10 divide-y divide-accent/5">
+                    {/* Subjects */}
+                    <div className="px-5 py-3">
+                      <p className="text-xs font-semibold text-muted uppercase tracking-wide mb-2">arXiv Subjects</p>
+                      {t.subjects?.length === 0 ? (
+                        <p className="text-xs text-muted/40 italic">No subjects assigned</p>
+                      ) : (
+                        <div className="space-y-1">
+                          {t.subjects.map((s: any) => (
+                            <div key={s.id} className="flex items-center gap-2 text-xs">
+                              <span className="font-mono text-accent-2 bg-accent/10 px-1.5 py-0.5 rounded">{s.subject_code}</span>
+                              <span className="text-muted/60 flex-1 truncate">{s.description}</span>
+                              <select
+                                value={topicKey}
+                                onChange={e => assignSubject(s.id, e.target.value)}
+                                className="bg-surface-2 border border-accent/20 text-xs text-white rounded-lg px-2 py-1 focus:outline-none"
+                              >
+                                {topicKeys.map(tk => (
+                                  <option key={tk} value={tk}>{mapping[tk]?.label || tk}</option>
+                                ))}
+                              </select>
+                              <button onClick={() => deleteSubject(s.id)} className="text-muted hover:text-red-400 p-1 rounded transition-colors">
+                                <Trash2 size={11} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Keywords */}
+                    <div className="px-5 py-3">
+                      <p className="text-xs font-semibold text-muted uppercase tracking-wide mb-2">Scoring Keywords</p>
+                      {t.keywords?.length === 0 ? (
+                        <p className="text-xs text-muted/40 italic">No keywords assigned</p>
+                      ) : (
+                        <div className="flex flex-wrap gap-2">
+                          {t.keywords.map((k: any) => (
+                            <div key={k.id} className="flex items-center gap-1 bg-surface-2 border border-accent/15 rounded-lg px-2 py-1">
+                              <span className="text-xs text-white">{k.keyword}</span>
+                              <span className="text-[9px] text-muted/50">×{k.weight}</span>
+                              <select
+                                value={topicKey}
+                                onChange={e => assignKeyword(k.id, e.target.value)}
+                                className="bg-transparent text-[10px] text-muted focus:outline-none ml-1"
+                              >
+                                {topicKeys.map(tk => (
+                                  <option key={tk} value={tk}>{mapping[tk]?.label || tk}</option>
+                                ))}
+                              </select>
+                              <button onClick={() => deleteKeyword(k.id)} className="text-muted hover:text-red-400 transition-colors ml-0.5">
+                                <Trash2 size={10} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+
 // ── Subjects ──────────────────────────────────────────────────────────────────
 
 function SubjectsAdmin() {
@@ -2276,6 +2431,7 @@ export function AdminPage() {
             <Route path="papers" element={<PapersAdmin />} />
             <Route path="keywords" element={<KeywordsAdmin />} />
             <Route path="topics" element={<TopicsAdmin />} />
+            <Route path="mapping" element={<TopicMappingAdmin />} />
             <Route path="subjects" element={<SubjectsAdmin />} />
             <Route path="users" element={<UsersAdmin />} />
             <Route path="config" element={<ConfigAdmin />} />

@@ -252,10 +252,62 @@ async def delete_keyword(kw_id: int, db: TursoClient = Depends(get_db), _: dict 
     return {"status": "deleted"}
 
 
+@router.patch("/keywords/{kw_id}/topic")
+async def set_keyword_topic(
+    kw_id: int,
+    body: dict,
+    db: TursoClient = Depends(get_db),
+    _: dict = Depends(require_admin),
+):
+    topic = body.get("topic_category", "General")
+    await db.execute("UPDATE keywords SET topic_category=? WHERE id=?", [topic, kw_id])
+    return {"status": "updated"}
+
+
+@router.get("/topics-mapping")
+async def get_topics_mapping(db: TursoClient = Depends(get_db), _: dict = Depends(require_admin)):
+    """
+    Returns all subjects and keywords grouped by their topic_category.
+    Used by the admin Topics view to show which arXiv subjects and scoring
+    keywords belong to each non-technical topic.
+    """
+    from app.api.feed import _TOPIC_META
+    subjects = await db.fetchall(
+        "SELECT id, subject_code, description, is_active, "
+        "COALESCE(topic_category, 'General') as topic_category "
+        "FROM arxiv_subjects ORDER BY subject_code ASC"
+    )
+    keywords = await db.fetchall(
+        "SELECT id, keyword, weight, category, is_active, "
+        "COALESCE(topic_category, 'General') as topic_category "
+        "FROM keywords ORDER BY keyword ASC"
+    )
+    # Build grouped structure
+    all_topics = list(_TOPIC_META.keys())
+    result = {}
+    for t in all_topics:
+        result[t] = {
+            "label": _TOPIC_META[t]["label"],
+            "emoji": _TOPIC_META[t]["emoji"],
+            "subjects": [s for s in subjects if s["topic_category"] == t],
+            "keywords": [k for k in keywords if k["topic_category"] == t],
+        }
+    # Ungrouped bucket
+    result["General"] = {
+        "label": "General / Unassigned",
+        "emoji": "🧠",
+        "subjects": [s for s in subjects if s["topic_category"] not in _TOPIC_META or s["topic_category"] == "General"],
+        "keywords": [k for k in keywords if k["topic_category"] not in _TOPIC_META or k["topic_category"] == "General"],
+    }
+    return result
+
+
 @router.get("/subjects")
 async def get_subjects(db: TursoClient = Depends(get_db), _: dict = Depends(require_admin)):
     return await db.fetchall(
-        "SELECT id, subject_code, description, is_active FROM arxiv_subjects ORDER BY subject_code ASC"
+        "SELECT id, subject_code, description, is_active, "
+        "COALESCE(topic_category, 'General') as topic_category "
+        "FROM arxiv_subjects ORDER BY topic_category ASC, subject_code ASC"
     )
 
 
@@ -269,6 +321,18 @@ async def add_subject(s: SubjectCreate, db: TursoClient = Depends(get_db), _: di
         return {"status": "added"}
     except Exception:
         raise HTTPException(status_code=400, detail="Subject already exists")
+
+
+@router.patch("/subjects/{subject_id}/topic")
+async def set_subject_topic(
+    subject_id: int,
+    body: dict,
+    db: TursoClient = Depends(get_db),
+    _: dict = Depends(require_admin),
+):
+    topic = body.get("topic_category", "General")
+    await db.execute("UPDATE arxiv_subjects SET topic_category=? WHERE id=?", [topic, subject_id])
+    return {"status": "updated"}
 
 
 @router.delete("/subjects/{subject_id}")

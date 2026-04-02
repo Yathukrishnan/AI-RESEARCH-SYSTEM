@@ -162,6 +162,7 @@ export function TopicPage() {
   const [papers, setPapers] = useState<(LandingPaper & { is_pinned?: boolean })[]>([])
   const [meta, setMeta] = useState<TopicMeta | null>(null)
   const [topicHook, setTopicHook] = useState('')
+  const [weeklyDigest, setWeeklyDigest] = useState('')
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(0)
   const [hasMore, setHasMore] = useState(false)
@@ -181,6 +182,7 @@ export function TopicPage() {
         setMeta(d.meta)
         setTopicHook((d.meta as any).hook || d.meta.tagline || '')
       }
+      if (pg === 0 && d.weekly_digest) setWeeklyDigest(d.weekly_digest)
     } catch {
       // silent
     } finally {
@@ -244,6 +246,16 @@ export function TopicPage() {
                 <p className={cn('text-base md:text-lg font-medium leading-relaxed', c.text, 'opacity-80')}>
                   {topicHook}
                 </p>
+              )}
+
+              {/* Weekly digest — plain-English overview of what's being discussed */}
+              {weeklyDigest && (
+                <div className="mt-4 pt-4 border-t border-white/8">
+                  <p className="text-xs font-semibold text-muted/50 uppercase tracking-widest mb-2">What's being discussed this week</p>
+                  <p className="text-sm text-white/60 leading-relaxed">
+                    {weeklyDigest}
+                  </p>
+                </div>
               )}
             </motion.div>
           ) : (

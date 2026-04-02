@@ -998,6 +998,65 @@ No markdown, no extra text."""
 
         return []
 
+    async def generate_topic_weekly_digest(
+        self,
+        topic_label: str,
+        paper_summaries: list,
+    ) -> str:
+        """
+        Generate a 3-4 sentence plain-English overview of what this topic's
+        papers are discussing this week. No paper titles. Just themes and ideas.
+        Shown on the topic page below the journalist hook.
+        """
+        if not self._api_key or not paper_summaries:
+            return ""
+
+        combined = "\n".join(f"- {s[:300]}" for s in paper_summaries[:8] if s)
+        if not combined.strip():
+            return ""
+
+        prompt = f"""You are writing a 3-4 sentence introduction for a section of a magazine called "{topic_label} — This Week".
+
+Below are summaries of 5-8 research papers being discussed this week in this area. Your job is to write a short paragraph that tells a curious, non-technical reader what the overall themes and ideas are — NOT a list of what each paper does, but a flowing description of what the field is working on right now.
+
+Paper summaries:
+{combined}
+
+Write 3-4 sentences (80-120 words total) that:
+1. Open with the biggest theme or tension the papers share this week
+2. Mention 2-3 specific ideas or problems being worked on (no paper names, no titles)
+3. Close with why this moment in the field feels significant or exciting
+
+Rules:
+- NO paper titles, NO author names, NO "one paper", NO "a study" — just ideas and themes
+- Plain English — a teenager should understand it
+- NO bullet points, NO headers — flowing prose only
+- Do NOT start with "This week" or "Researchers" — be more creative
+- Keep it conversational, not academic
+
+Write ONLY the paragraph. No labels, no quotes around the output."""
+
+        try:
+            async with httpx.AsyncClient(timeout=25) as client:
+                resp = await client.post(
+                    f"{self.base_url}/chat/completions",
+                    headers={"Authorization": f"Bearer {self._api_key}", "Content-Type": "application/json"},
+                    json={
+                        "model": self.model,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "max_tokens": 200,
+                        "temperature": 0.75,
+                    }
+                )
+                if resp.status_code == 200:
+                    text = resp.json()["choices"][0]["message"]["content"].strip().strip('"\'')
+                    if text and len(text) > 80:
+                        return text
+        except Exception as e:
+            logger.warning(f"Topic digest error: {e}")
+
+        return ""
+
     def _make_fallback_hook(self, title: str, abstract: str) -> str:
         """Short fallback hook from title (truncated to feel punchy)."""
         # Trim title to ~70 chars at a word boundary

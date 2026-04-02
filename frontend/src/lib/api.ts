@@ -117,6 +117,9 @@ export const adminApi = {
     api.post('/admin/topic-categories', data),
   deleteTopicCategory: (key: string) => api.delete(`/admin/topic-categories/${encodeURIComponent(key)}`),
   restoreTopicCategory: (key: string) => api.patch(`/admin/topic-categories/${encodeURIComponent(key)}/restore`),
+  getTopicsMapping: () => api.get('/admin/topics-mapping'),
+  setSubjectTopic: (id: number, topic: string) => api.patch(`/admin/subjects/${id}/topic`, { topic_category: topic }),
+  setKeywordTopic: (id: number, topic: string) => api.patch(`/admin/keywords/${id}/topic`, { topic_category: topic }),
 }
 
 export const dashboardApi = {
