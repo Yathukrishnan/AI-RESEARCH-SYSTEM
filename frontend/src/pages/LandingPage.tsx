@@ -359,15 +359,15 @@ export function LandingPage() {
         <div className="max-w-5xl mx-auto px-4 py-12 text-center space-y-5">
           <motion.div initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
             <p className="text-[10px] font-black tracking-[0.35em] text-accent/55 uppercase mb-3">
-              AI Research · Explained For Everyone
+              The AI Research Magazine
             </p>
             <h1 className="text-4xl md:text-[3.2rem] font-extrabold text-white leading-tight tracking-tight">
-              The biggest ideas in AI,<br />
-              <span className="text-accent">in plain English</span>
+              AI is changing everything.<br />
+              <span className="text-accent">Here's what's actually happening.</span>
             </h1>
             <p className="text-muted text-base mt-3 max-w-lg mx-auto leading-relaxed">
-              Every day, thousands of AI research papers are published.
-              We read them so you don't have to — and we tell you what actually matters.
+              Every week, the world's brightest researchers publish breakthroughs that will shape the next decade.
+              We turn the science into stories anyone can understand.
             </p>
           </motion.div>
 
