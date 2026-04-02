@@ -305,108 +305,17 @@ async def get_topics_mapping(db: TursoClient = Depends(get_db), _: dict = Depend
 @router.post("/auto-assign-topics")
 async def auto_assign_topics(db: TursoClient = Depends(get_db), _: dict = Depends(require_admin)):
     """
-    Bulk-assign topic_category on all subjects and keywords using the same
-    prefix / keyword rules that the feed uses to classify papers.
-    Safe to run repeatedly — only overwrites existing assignments.
+    Force-reassign topic_category on ALL subjects and keywords (ignores existing values).
+    Useful after adding new subjects or keywords, or to fix mis-assignments.
     """
-    # ── Subject prefix map (arXiv code → topic) ───────────────────────────────
-    SUBJECT_PREFIX_MAP = [
-        # Language & AI
-        ("cs.cl",  "Language"), ("cs.ai",  "Language"), ("cs.ne",  "Language"),
-        ("cs.lg",  "Language"), ("stat.ml","Language"),
-        # Vision & Creativity
-        ("cs.cv",  "Vision"),   ("cs.gr",  "Vision"),   ("cs.mm",  "Vision"),
-        ("eess.iv","Vision"),
-        # Robots & Automation
-        ("cs.ro",  "Robots"),   ("cs.sy",  "Robots"),   ("cs.ma",  "Robots"),
-        ("eess.as","Robots"),
-        # Medicine & Health
-        ("q-bio",  "Health"),   ("eess.sp","Health"),
-        # AI Safety & Trust
-        ("cs.cr",  "Safety"),   ("cs.cy",  "Safety"),
-        # Science & Discovery
-        ("physics","Science"),  ("astro-ph","Science"), ("math",   "Science"),
-        ("cond-mat","Science"), ("quant-ph","Science"),("nucl",   "Science"),
-        ("hep",    "Science"),  ("gr-qc",  "Science"),  ("cs.na",  "Science"),
-        ("cs.lo",  "Science"),  ("cs.dm",  "Science"),  ("cs.it",  "Science"),
-        ("cs.ce",  "Science"),  ("stat.th","Science"),  ("stat.ap","Science"),
-        # Speed & Efficiency
-        ("cs.ar",  "Efficiency"),("cs.pf",  "Efficiency"),("cs.dc","Efficiency"),
-        ("cs.ds",  "Efficiency"),("cs.ni",  "Efficiency"),("cs.se","Efficiency"),
-        ("cs.pl",  "Efficiency"),("cs.os",  "Efficiency"),("eess", "Efficiency"),
-        # Business & Economy
-        ("econ",   "Business"), ("cs.ir",  "Business"), ("cs.gt", "Business"),
-        ("cs.hc",  "Business"), ("cs.db",  "Business"),
-        # Climate & Energy
-        ("eess.sy","Climate"),
-    ]
-
-    # ── Keyword content map (substring → topic, checked in order) ─────────────
-    KEYWORD_TOPIC_RULES = [
-        # Climate first (narrow)
-        (["climate", "carbon", "emission", "sustainability", "renewable energy",
-           "net zero", "greenhouse", "clean energy", "solar", "wind power",
-           "battery", "electric vehicle", "environmental"], "Climate"),
-        # Health
-        (["drug", "clinical", "patient", "genomic", "protein", "disease",
-           "medical", "biomedical", "cancer", "therapy", "dna", "rna",
-           "biology", "molecule", "patholog", "radiology", "epidemic",
-           "pandemic", "covid", "diagnostic", "surgery", "health"], "Health"),
-        # Robots
-        (["robot", "manipulation", "locomotion", "autonomous vehicle", "drone",
-           "actuator", "embodied", "humanoid", "gripper", "navigation",
-           "sim-to-real", "control policy", "physical agent"], "Robots"),
-        # Safety
-        (["safety", "alignment", "hallucination", "bias", "fairness", "ethics",
-           "toxic", "trustworthy", "adversarial", "jailbreak", "red-team",
-           "misinformation", "deepfake", "privacy", "watermark"], "Safety"),
-        # Efficiency
-        (["quantization", "pruning", "distillation", "compression", "efficient",
-           "edge deploy", "latency", "inference", "hardware accelerat",
-           "model compression", "sparse", "mixed precision", "tpu", "gpu kernel",
-           "throughput", "low-rank", "lora", "gguf"], "Efficiency"),
-        # Business
-        (["finance", "stock", "market", "forecast", "recommendation system",
-           "e-commerce", "trading", "economic", "business", "enterprise",
-           "customer", "supply chain", "revenue", "retail", "advertisement",
-           "clickthrough", "search ranking"], "Business"),
-        # Vision
-        (["image", "vision", "visual", "diffusion model", "stable diffusion",
-           "image generation", "segmentation", "object detection", "video",
-           "gan", "text-to-image", "vit", "clip", "depth estimation",
-           "3d reconstruction", "nerf"], "Vision"),
-        # Science
-        (["quantum", "chemistry", "material", "astronomy", "astrophysics",
-           "neuroscience", "physics", "theorem", "molecule simulation",
-           "molecular dynamics", "protein folding", "alphafold"], "Science"),
-        # Language (broad — check last so specifics above win)
-        (["language model", "large language", "llm", "gpt", "bert", "nlp",
-           "transformer", "text generation", "summarization", "translation",
-           "question answering", "chatbot", "instruction tuning", "rlhf",
-           "retrieval augmented", "rag", "embedding", "tokenization",
-           "fine-tun", "pre-train"], "Language"),
-    ]
+    from app.core.database import _derive_subject_topic, _derive_keyword_topic
 
     subjects = await db.fetchall("SELECT id, subject_code FROM arxiv_subjects")
     keywords = await db.fetchall("SELECT id, keyword FROM keywords")
 
-    def topic_for_subject(code: str) -> str:
-        code_lower = code.lower()
-        for prefix, topic in SUBJECT_PREFIX_MAP:
-            if code_lower.startswith(prefix):
-                return topic
-        return "General"
-
-    def topic_for_keyword(kw: str) -> str:
-        kw_lower = kw.lower()
-        for terms, topic in KEYWORD_TOPIC_RULES:
-            if any(t in kw_lower for t in terms):
-                return topic
-        return "General"
-
     sub_updated = 0
     for s in subjects:
-        topic = topic_for_subject(s["subject_code"])
+        topic = _derive_subject_topic(s["subject_code"])
         await db.execute(
             "UPDATE arxiv_subjects SET topic_category=? WHERE id=?",
             [topic, s["id"]]
@@ -415,7 +324,7 @@ async def auto_assign_topics(db: TursoClient = Depends(get_db), _: dict = Depend
 
     kw_updated = 0
     for k in keywords:
-        topic = topic_for_keyword(k["keyword"])
+        topic = _derive_keyword_topic(k["keyword"])
         await db.execute(
             "UPDATE keywords SET topic_category=? WHERE id=?",
             [topic, k["id"]]

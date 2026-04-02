@@ -295,7 +295,129 @@ async def init_db():
         except Exception as e:
             logger.warning(f"published_date migration warning: {e}")
 
+    # 6. Auto-assign topic_category on subjects and keywords that are still unassigned
+    await _auto_assign_topic_categories()
+
     logger.info("Schema ready.")
+
+
+# ── Topic auto-assignment ─────────────────────────────────────────────────────
+# Mirrors _ARXIV_TO_TOPIC + _ABSTRACT_TOPIC_HINTS from feed.py so the mapping
+# page always looks correct on first boot without any manual admin step.
+
+_SUBJECT_PREFIX_MAP = [
+    ("cs.cl",   "Language"), ("cs.ai",   "Language"), ("cs.ne",  "Language"),
+    ("cs.lg",   "Language"), ("stat.ml", "Language"),
+    ("cs.cv",   "Vision"),   ("cs.gr",   "Vision"),   ("cs.mm",  "Vision"),
+    ("eess.iv", "Vision"),
+    ("cs.ro",   "Robots"),   ("cs.sy",   "Robots"),   ("cs.ma",  "Robots"),
+    ("eess.as", "Robots"),
+    ("q-bio",   "Health"),   ("eess.sp", "Health"),
+    ("cs.cr",   "Safety"),   ("cs.cy",   "Safety"),
+    ("physics", "Science"),  ("astro-ph","Science"),  ("math",   "Science"),
+    ("cond-mat","Science"),  ("quant-ph","Science"),  ("nucl",   "Science"),
+    ("hep",     "Science"),  ("gr-qc",   "Science"),  ("cs.na",  "Science"),
+    ("cs.lo",   "Science"),  ("cs.dm",   "Science"),  ("cs.it",  "Science"),
+    ("cs.ce",   "Science"),  ("stat.th", "Science"),  ("stat.ap","Science"),
+    ("cs.ar",   "Efficiency"),("cs.pf",  "Efficiency"),("cs.dc", "Efficiency"),
+    ("cs.ds",   "Efficiency"),("cs.ni",  "Efficiency"),("cs.se", "Efficiency"),
+    ("cs.pl",   "Efficiency"),("cs.os",  "Efficiency"),("eess",  "Efficiency"),
+    ("econ",    "Business"), ("cs.ir",   "Business"), ("cs.gt",  "Business"),
+    ("cs.hc",   "Business"), ("cs.db",   "Business"),
+    ("eess.sy", "Climate"),
+]
+
+_KEYWORD_TOPIC_RULES = [
+    (["climate", "carbon", "emission", "sustainability", "renewable energy",
+       "net zero", "greenhouse", "clean energy", "solar", "wind power",
+       "battery", "electric vehicle", "environmental"], "Climate"),
+    (["drug", "clinical", "patient", "genomic", "protein", "disease",
+       "medical", "biomedical", "cancer", "therapy", "dna", "rna",
+       "biology", "molecule", "patholog", "radiology", "epidemic",
+       "pandemic", "covid", "diagnostic", "surgery", "health"], "Health"),
+    (["robot", "manipulation", "locomotion", "autonomous vehicle", "drone",
+       "actuator", "embodied", "humanoid", "gripper", "navigation",
+       "sim-to-real", "control policy", "physical agent"], "Robots"),
+    (["safety", "alignment", "hallucination", "bias", "fairness", "ethics",
+       "toxic", "trustworthy", "adversarial", "jailbreak", "red-team",
+       "misinformation", "deepfake", "privacy", "watermark"], "Safety"),
+    (["quantization", "pruning", "distillation", "compression", "efficient",
+       "edge deploy", "latency", "inference", "hardware accelerat",
+       "model compression", "sparse", "mixed precision", "tpu", "gpu kernel",
+       "throughput", "low-rank", "lora", "gguf"], "Efficiency"),
+    (["finance", "stock", "market", "forecast", "recommendation system",
+       "e-commerce", "trading", "economic", "business", "enterprise",
+       "customer", "supply chain", "revenue", "retail", "advertisement",
+       "clickthrough", "search ranking"], "Business"),
+    (["image", "vision", "visual", "diffusion model", "stable diffusion",
+       "image generation", "segmentation", "object detection", "video",
+       "gan", "text-to-image", "vit", "clip", "depth estimation",
+       "3d reconstruction", "nerf"], "Vision"),
+    (["quantum", "chemistry", "material", "astronomy", "astrophysics",
+       "neuroscience", "physics", "theorem", "molecule simulation",
+       "molecular dynamics", "protein folding", "alphafold"], "Science"),
+    (["language model", "large language", "llm", "gpt", "bert", "nlp",
+       "transformer", "text generation", "summarization", "translation",
+       "question answering", "chatbot", "instruction tuning", "rlhf",
+       "retrieval augmented", "rag", "embedding", "tokenization",
+       "fine-tun", "pre-train"], "Language"),
+]
+
+
+def _derive_subject_topic(code: str) -> str:
+    code_lower = code.lower()
+    for prefix, topic in _SUBJECT_PREFIX_MAP:
+        if code_lower.startswith(prefix):
+            return topic
+    return "General"
+
+
+def _derive_keyword_topic(kw: str) -> str:
+    kw_lower = kw.lower()
+    for terms, topic in _KEYWORD_TOPIC_RULES:
+        if any(t in kw_lower for t in terms):
+            return topic
+    return "General"
+
+
+async def _auto_assign_topic_categories():
+    """
+    Runs on every boot. Updates topic_category on subjects and keywords that
+    are NULL or still set to the default 'General' placeholder — so the admin
+    mapping page shows correct groupings without any manual button click.
+    Rows already manually reassigned to a non-General topic are left alone.
+    """
+    try:
+        if not await db.table_exists("arxiv_subjects"):
+            return
+        subjects = await db.fetchall(
+            "SELECT id, subject_code FROM arxiv_subjects "
+            "WHERE topic_category IS NULL OR topic_category = 'General'"
+        )
+        for s in subjects:
+            topic = _derive_subject_topic(s["subject_code"])
+            if topic != "General":
+                await db.execute(
+                    "UPDATE arxiv_subjects SET topic_category=? WHERE id=?",
+                    [topic, s["id"]]
+                )
+
+        if not await db.table_exists("keywords"):
+            return
+        keywords = await db.fetchall(
+            "SELECT id, keyword FROM keywords "
+            "WHERE topic_category IS NULL OR topic_category = 'General'"
+        )
+        for k in keywords:
+            topic = _derive_keyword_topic(k["keyword"])
+            if topic != "General":
+                await db.execute(
+                    "UPDATE keywords SET topic_category=? WHERE id=?",
+                    [topic, k["id"]]
+                )
+        logger.info("Topic auto-assignment complete.")
+    except Exception as e:
+        logger.warning(f"Topic auto-assignment warning: {e}")
 
 
 async def get_system_config(key: str, default: str = "") -> str:
