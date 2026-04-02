@@ -493,25 +493,42 @@ async def get_topic_categories(db: TursoClient = Depends(get_db), _: dict = Depe
     except Exception:
         custom_entries = []
 
-    # Paper counts per topic — group by primary_category + ai_topic_category so
-    # abstract-based topics like Climate are counted via _derive_topic fallback.
+    # Paper counts per topic.
+    # Most topics map cleanly from primary_category prefix so GROUP BY works.
+    # Climate has NO arXiv prefix — it's only detected via abstract keywords —
+    # so we count it separately with SQL LIKE, then do prefix-based GROUP BY
+    # for everything else.
     from app.api.feed import _derive_topic
+
+    # 1. Climate: direct abstract keyword count
+    climate_count = await db.count(
+        "papers",
+        "is_deleted=0 AND is_duplicate=0 AND ("
+        "  LOWER(abstract) LIKE '%climate%' OR LOWER(abstract) LIKE '%carbon%' OR "
+        "  LOWER(abstract) LIKE '%emission%' OR LOWER(abstract) LIKE '%sustainability%' OR "
+        "  LOWER(abstract) LIKE '%renewable%' OR LOWER(abstract) LIKE '%greenhouse%'"
+        ")"
+    )
+    counts: dict = {"Climate": climate_count}
+
+    # 2. All other topics: group by primary_category (prefix map covers them)
     pool_rows = await db.fetchall(
-        "SELECT primary_category, categories, abstract, ai_topic_category, COUNT(*) as cnt "
+        "SELECT primary_category, ai_topic_category, COUNT(*) as cnt "
         "FROM papers WHERE is_deleted=0 AND is_duplicate=0 "
         "GROUP BY primary_category, ai_topic_category "
         "LIMIT 2000"
     )
-    counts: dict = {}
     for r in pool_rows:
         topic = (
             (r.get("ai_topic_category") or "").strip()
             or _derive_topic(
                 r.get("primary_category") or "",
-                r.get("categories") or "[]",
-                r.get("abstract") or "",
+                "[]",
+                "",  # no abstract — prefix map handles all non-Climate topics
             )
         )
+        if topic == "Climate":
+            continue  # already counted above
         counts[topic] = counts.get(topic, 0) + (r.get("cnt") or 1)
 
     # Build merged list: built-in first, then custom
