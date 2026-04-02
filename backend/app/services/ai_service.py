@@ -1022,25 +1022,34 @@ No markdown, no extra text."""
 
         prompt = f"""You are the editor of a magazine section called "This Week In {topic_label}" — written for curious, intelligent non-technical readers (think The Atlantic, Wired, Nautilus).
 
-Below are the top 6 research papers being highlighted this week. Your job is to write a rich editorial digest: a flowing, engaging piece that explains what the field is collectively working on, why it matters, and what tensions or breakthroughs define this moment — while naturally referencing specific paper titles within the prose.
+Below are the top 6 research papers featured this week. Write a 4-paragraph editorial that follows this EXACT structure:
 
 PAPERS THIS WEEK:
 {paper_blocks}
 
-Write a 3-4 paragraph editorial (350-550 words total) that:
-1. Opens with 1 strong paragraph about the biggest theme or tension unifying this week's papers — no paper names yet, just set the scene
-2. In the next 1-2 paragraphs, weave in specific paper titles as you discuss the ideas (e.g. "...a challenge that **Paper Title** addresses by...") — explain what each paper is doing in plain English, connecting papers thematically rather than listing them
-3. Closes with a short forward-looking paragraph about why this week's work matters for the field or for ordinary people
+STRUCTURE — follow this exactly, 4 paragraphs separated by blank lines:
 
-RULES:
-- Wrap paper titles in **double asterisks** exactly as written above — this is how the app highlights them
-- Plain English throughout — no jargon, no equations, no citations
-- Do NOT use bullet points, numbered lists, or section headers
-- Do NOT start with "This week" or "Researchers" — be more creative
-- Flowing prose only — each paragraph 3-5 sentences
-- Tone: informed, curious, slightly urgent — like a smart friend explaining why something matters
+PARAGRAPH 1 — INTRODUCTION (3-4 sentences, no paper titles):
+Set the scene. What is the big theme, tension, or question that unites this week's research? Why does this moment in {topic_label} feel significant? Hook the reader without mentioning any specific papers yet.
 
-Output ONLY the editorial text. No title, no byline, no labels."""
+PARAGRAPH 2 — FIRST HALF OF PAPERS (3-5 sentences):
+Discuss the first 2-3 papers from the list, weaving their titles naturally into the prose. Each title MUST be wrapped in **double asterisks**. Explain what each paper is doing in plain English and connect them thematically. Example: "...a gap that **Paper Title** addresses by showing that..."
+
+PARAGRAPH 3 — SECOND HALF OF PAPERS (3-5 sentences):
+Discuss the remaining 2-3 papers the same way — titles in **double asterisks**, woven naturally into the prose. Connect to the themes from paragraph 2 where possible.
+
+PARAGRAPH 4 — CONCLUSION (2-3 sentences, no paper titles):
+Close with why this week's work matters for ordinary people or for the future of the field. Forward-looking, warm, slightly urgent. No paper titles.
+
+STRICT RULES:
+- ALWAYS wrap paper titles in **double asterisks** — every paper from the list must appear in bold
+- Plain English — a curious teenager should understand every sentence
+- NO bullet points, NO numbered lists, NO section headers, NO labels like "Introduction:"
+- Do NOT start any paragraph with "This week" or "Researchers"
+- Exactly 4 paragraphs separated by a blank line between each
+- Total: 350-500 words
+
+Output ONLY the 4 paragraphs of editorial text. Nothing else."""
 
         try:
             async with httpx.AsyncClient(timeout=40) as client:
@@ -1050,8 +1059,8 @@ Output ONLY the editorial text. No title, no byline, no labels."""
                     json={
                         "model": self.model,
                         "messages": [{"role": "user", "content": prompt}],
-                        "max_tokens": 900,
-                        "temperature": 0.78,
+                        "max_tokens": 1100,
+                        "temperature": 0.75,
                     }
                 )
                 if resp.status_code == 200:

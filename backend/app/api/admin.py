@@ -493,25 +493,24 @@ async def get_topic_categories(db: TursoClient = Depends(get_db), _: dict = Depe
     except Exception:
         custom_entries = []
 
-    # Paper counts per topic — derive topic from primary_category using the same
-    # prefix map that the feed uses, since ai_topic_category is often unpopulated.
-    from app.api.feed import _ARXIV_TO_TOPIC, _derive_topic
-    cat_rows = await db.fetchall(
-        "SELECT primary_category, categories, abstract, ai_topic_category, COUNT(*) as cnt "
-        "FROM papers WHERE is_deleted=0 AND is_duplicate=0 "
-        "GROUP BY primary_category, ai_topic_category"
+    # Paper counts per topic — scan every paper individually so abstract-based
+    # topics (Climate) are counted correctly alongside prefix-based ones.
+    from app.api.feed import _derive_topic
+    all_papers = await db.fetchall(
+        "SELECT primary_category, categories, abstract, ai_topic_category "
+        "FROM papers WHERE is_deleted=0 AND is_duplicate=0"
     )
     counts: dict = {}
-    for r in cat_rows:
+    for r in all_papers:
         topic = (
-            r.get("ai_topic_category")
+            (r.get("ai_topic_category") or "").strip()
             or _derive_topic(
                 r.get("primary_category") or "",
                 r.get("categories") or "[]",
                 r.get("abstract") or "",
             )
         )
-        counts[topic] = counts.get(topic, 0) + (r["cnt"] or 0)
+        counts[topic] = counts.get(topic, 0) + 1
 
     # Build merged list: built-in first, then custom
     result = []

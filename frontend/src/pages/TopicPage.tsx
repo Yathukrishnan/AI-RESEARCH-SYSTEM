@@ -162,13 +162,12 @@ function WeeklyDigest({ digest, topicLabel, color }: { digest: string; topicLabe
   const paragraphs = digest.split(/\n\n+/).filter(Boolean)
 
   function renderParagraph(text: string, key: number) {
-    // Split on **...** markers
     const parts = text.split(/\*\*(.+?)\*\*/g)
     return (
-      <p key={key} className="text-sm text-white/70 leading-relaxed">
+      <p key={key} className="text-[15px] text-white/75 leading-[1.8] tracking-[0.01em]">
         {parts.map((part, i) =>
           i % 2 === 1
-            ? <strong key={i} className={cn('font-semibold', c.text)}>{part}</strong>
+            ? <strong key={i} className={cn('font-bold not-italic', c.text)}>{part}</strong>
             : <span key={i}>{part}</span>
         )}
       </p>
@@ -180,18 +179,18 @@ function WeeklyDigest({ digest, topicLabel, color }: { digest: string; topicLabe
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: 0.2, duration: 0.4 }}
-      className="mt-6 pt-5 border-t border-white/8 space-y-4"
+      className="mt-6 pt-5 border-t border-white/8 space-y-5"
     >
       {/* Section header */}
-      <div className="flex items-center gap-2">
-        <span className={cn('text-[10px] font-bold uppercase tracking-widest', c.text, 'opacity-60')}>
+      <div className="flex items-center gap-3">
+        <span className={cn('text-[10px] font-black uppercase tracking-[0.2em]', c.text, 'opacity-70')}>
           This Week In {topicLabel}
         </span>
         <div className="flex-1 h-px bg-white/6" />
       </div>
 
-      {/* Editorial body */}
-      <div className="space-y-3">
+      {/* Editorial body — 4 paragraphs with generous spacing */}
+      <div className="space-y-5">
         {paragraphs.map((para, i) => renderParagraph(para, i))}
       </div>
     </motion.div>

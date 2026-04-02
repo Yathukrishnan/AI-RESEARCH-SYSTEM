@@ -1004,7 +1004,7 @@ async def get_topic_papers(
     # V2 cache key: new editorial format with paper titles in bold
     weekly_digest = ""
     if page == 0:
-        digest_key = f"TOPIC_DIGEST_V2_{topic}_{current_week}"
+        digest_key = f"TOPIC_DIGEST_V3_{topic}_{current_week}"
         from app.core.database import get_system_config, set_system_config
         weekly_digest = await get_system_config(digest_key) or ""
         if not weekly_digest and pinned:
@@ -1028,9 +1028,7 @@ async def get_topic_papers(
                 digest = await _ai.generate_topic_weekly_digest(topic_label_str, digest_papers)
                 if digest:
                     weekly_digest = digest
-                    asyncio.create_task(
-                        set_system_config(digest_key, digest, f"Weekly digest V2 for {topic} week {current_week}")
-                    )
+                    await set_system_config(digest_key, digest, f"Weekly digest V2 for {topic} week {current_week}")
             except Exception:
                 pass
 
