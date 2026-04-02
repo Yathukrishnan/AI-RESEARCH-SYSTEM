@@ -1001,56 +1001,62 @@ No markdown, no extra text."""
     async def generate_topic_weekly_digest(
         self,
         topic_label: str,
-        paper_summaries: list,
+        papers: list,  # list of {"title": str, "summary": str}
     ) -> str:
         """
-        Generate a 3-4 sentence plain-English overview of what this topic's
-        papers are discussing this week. No paper titles. Just themes and ideas.
-        Shown on the topic page below the journalist hook.
+        Generate a multi-paragraph magazine editorial for the topic page's
+        "This Week In {topic}" section. References the top 6 paper titles
+        in bold (**Title**) woven naturally into the prose.
+        Cached for 1 week — only called when cache is empty.
         """
-        if not self._api_key or not paper_summaries:
+        if not self._api_key or not papers:
             return ""
 
-        combined = "\n".join(f"- {s[:300]}" for s in paper_summaries[:8] if s)
-        if not combined.strip():
+        paper_blocks = "\n".join(
+            f"{i+1}. Title: {p['title']}\n   Summary: {p['summary'][:350]}"
+            for i, p in enumerate(papers[:6])
+            if p.get("title") and p.get("summary")
+        )
+        if not paper_blocks.strip():
             return ""
 
-        prompt = f"""You are writing a 3-4 sentence introduction for a section of a magazine called "{topic_label} — This Week".
+        prompt = f"""You are the editor of a magazine section called "This Week In {topic_label}" — written for curious, intelligent non-technical readers (think The Atlantic, Wired, Nautilus).
 
-Below are summaries of 5-8 research papers being discussed this week in this area. Your job is to write a short paragraph that tells a curious, non-technical reader what the overall themes and ideas are — NOT a list of what each paper does, but a flowing description of what the field is working on right now.
+Below are the top 6 research papers being highlighted this week. Your job is to write a rich editorial digest: a flowing, engaging piece that explains what the field is collectively working on, why it matters, and what tensions or breakthroughs define this moment — while naturally referencing specific paper titles within the prose.
 
-Paper summaries:
-{combined}
+PAPERS THIS WEEK:
+{paper_blocks}
 
-Write 3-4 sentences (80-120 words total) that:
-1. Open with the biggest theme or tension the papers share this week
-2. Mention 2-3 specific ideas or problems being worked on (no paper names, no titles)
-3. Close with why this moment in the field feels significant or exciting
+Write a 3-4 paragraph editorial (350-550 words total) that:
+1. Opens with 1 strong paragraph about the biggest theme or tension unifying this week's papers — no paper names yet, just set the scene
+2. In the next 1-2 paragraphs, weave in specific paper titles as you discuss the ideas (e.g. "...a challenge that **Paper Title** addresses by...") — explain what each paper is doing in plain English, connecting papers thematically rather than listing them
+3. Closes with a short forward-looking paragraph about why this week's work matters for the field or for ordinary people
 
-Rules:
-- NO paper titles, NO author names, NO "one paper", NO "a study" — just ideas and themes
-- Plain English — a teenager should understand it
-- NO bullet points, NO headers — flowing prose only
+RULES:
+- Wrap paper titles in **double asterisks** exactly as written above — this is how the app highlights them
+- Plain English throughout — no jargon, no equations, no citations
+- Do NOT use bullet points, numbered lists, or section headers
 - Do NOT start with "This week" or "Researchers" — be more creative
-- Keep it conversational, not academic
+- Flowing prose only — each paragraph 3-5 sentences
+- Tone: informed, curious, slightly urgent — like a smart friend explaining why something matters
 
-Write ONLY the paragraph. No labels, no quotes around the output."""
+Output ONLY the editorial text. No title, no byline, no labels."""
 
         try:
-            async with httpx.AsyncClient(timeout=25) as client:
+            async with httpx.AsyncClient(timeout=40) as client:
                 resp = await client.post(
                     f"{self.base_url}/chat/completions",
                     headers={"Authorization": f"Bearer {self._api_key}", "Content-Type": "application/json"},
                     json={
                         "model": self.model,
                         "messages": [{"role": "user", "content": prompt}],
-                        "max_tokens": 200,
-                        "temperature": 0.75,
+                        "max_tokens": 900,
+                        "temperature": 0.78,
                     }
                 )
                 if resp.status_code == 200:
                     text = resp.json()["choices"][0]["message"]["content"].strip().strip('"\'')
-                    if text and len(text) > 80:
+                    if text and len(text) > 200:
                         return text
         except Exception as e:
             logger.warning(f"Topic digest error: {e}")

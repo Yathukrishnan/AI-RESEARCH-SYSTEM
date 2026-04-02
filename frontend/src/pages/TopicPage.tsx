@@ -154,6 +154,51 @@ function StoryCard({ paper, index, color, onRead }: {
   )
 }
 
+// ── Weekly Digest — magazine editorial with bold paper titles ─────────────────
+function WeeklyDigest({ digest, topicLabel, color }: { digest: string; topicLabel: string; color: string }) {
+  const c = COLORS[color] || COLORS.slate
+
+  // Parse text: split into paragraphs, then bold **text** within each
+  const paragraphs = digest.split(/\n\n+/).filter(Boolean)
+
+  function renderParagraph(text: string, key: number) {
+    // Split on **...** markers
+    const parts = text.split(/\*\*(.+?)\*\*/g)
+    return (
+      <p key={key} className="text-sm text-white/70 leading-relaxed">
+        {parts.map((part, i) =>
+          i % 2 === 1
+            ? <strong key={i} className={cn('font-semibold', c.text)}>{part}</strong>
+            : <span key={i}>{part}</span>
+        )}
+      </p>
+    )
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.2, duration: 0.4 }}
+      className="mt-6 pt-5 border-t border-white/8 space-y-4"
+    >
+      {/* Section header */}
+      <div className="flex items-center gap-2">
+        <span className={cn('text-[10px] font-bold uppercase tracking-widest', c.text, 'opacity-60')}>
+          This Week In {topicLabel}
+        </span>
+        <div className="flex-1 h-px bg-white/6" />
+      </div>
+
+      {/* Editorial body */}
+      <div className="space-y-3">
+        {paragraphs.map((para, i) => renderParagraph(para, i))}
+      </div>
+    </motion.div>
+  )
+}
+
+
 // ── Main component ────────────────────────────────────────────────────────────
 export function TopicPage() {
   const { topic = 'General' } = useParams<{ topic: string }>()
@@ -248,14 +293,9 @@ export function TopicPage() {
                 </p>
               )}
 
-              {/* Weekly digest — plain-English overview of what's being discussed */}
+              {/* Weekly editorial digest */}
               {weeklyDigest && (
-                <div className="mt-4 pt-4 border-t border-white/8">
-                  <p className="text-xs font-semibold text-muted/50 uppercase tracking-widest mb-2">What's being discussed this week</p>
-                  <p className="text-sm text-white/60 leading-relaxed">
-                    {weeklyDigest}
-                  </p>
-                </div>
+                <WeeklyDigest digest={weeklyDigest} topicLabel={meta.label} color={color} />
               )}
             </motion.div>
           ) : (
