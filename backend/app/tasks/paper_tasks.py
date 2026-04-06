@@ -351,6 +351,17 @@ async def fetch_and_store_papers(days: int = 1):
     log_id = log_row["id"] if log_row else 0
 
     raw_papers = await fetch_papers_for_date_range(days=days)
+
+    # arXiv publishes no papers on weekends. If a 1-day fetch returns nothing,
+    # widen the window to 3 days so we pick up Friday's batch on Saturday/Sunday.
+    if not raw_papers and days == 1:
+        logger.info("0 papers from 1-day window — widening to 3 days (weekend gap)")
+        await turso_db.execute(
+            "UPDATE analysis_log SET notes=? WHERE id=?",
+            ["0 papers in 1-day window, retrying with 3-day window…", log_id]
+        )
+        raw_papers = await fetch_papers_for_date_range(days=3)
+
     keywords = await _get_keywords()
     current_week = await _current_week_number()
     display_week = current_week  # Papers appear same day they are fetched
