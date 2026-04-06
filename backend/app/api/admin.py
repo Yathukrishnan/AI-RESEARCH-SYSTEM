@@ -1128,19 +1128,21 @@ async def paper_quality_check(
     # Pass paper dict with the CORRECT arxiv_id so GitHub lookup key matches
     paper_for_gh = {**paper, "arxiv_id": arxiv_id}
 
-    ss_task  = asyncio.create_task(enricher.get_semantic_scholar_data(arxiv_id))
-    hf_task  = asyncio.create_task(enricher.get_huggingface_data(arxiv_id))
-    hn_task  = asyncio.create_task(enricher.get_hackernews_data(arxiv_id, paper.get("title", "")))
-    oa_task  = asyncio.create_task(enricher.get_openalex_data(arxiv_id))
-    gh_task  = asyncio.create_task(enricher.get_github_data_concurrent([paper_for_gh]))
-    ai_task  = asyncio.create_task(ai_svc.validate_paper(
-        paper.get("title", ""),
-        paper.get("abstract", ""),
-        [],
-    ))
+    # Wrap each service call with a per-service timeout so a single slow API
+    # (e.g. SS retrying on 429) cannot block the whole quality-check request.
+    async def _with_timeout(coro, seconds, default):
+        try:
+            return await asyncio.wait_for(coro, timeout=seconds)
+        except Exception:
+            return default
 
     ss_data, hf_data, hn_data, oa_data, gh_map, ai_data = await asyncio.gather(
-        ss_task, hf_task, hn_task, oa_task, gh_task, ai_task,
+        _with_timeout(enricher.get_semantic_scholar_data(arxiv_id), 20, {}),
+        _with_timeout(enricher.get_huggingface_data(arxiv_id), 10, {}),
+        _with_timeout(enricher.get_hackernews_data(arxiv_id, paper.get("title", "")), 10, {}),
+        _with_timeout(enricher.get_openalex_data(arxiv_id), 10, {}),
+        _with_timeout(enricher.get_github_data_concurrent([paper_for_gh]), 20, {}),
+        _with_timeout(ai_svc.validate_paper(paper.get("title", ""), paper.get("abstract", ""), []), 30, {}),
         return_exceptions=True,
     )
 

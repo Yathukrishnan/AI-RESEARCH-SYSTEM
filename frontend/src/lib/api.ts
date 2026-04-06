@@ -122,7 +122,7 @@ export const adminApi = {
   setSubjectTopic: (id: number, topic: string) => api.patch(`/admin/subjects/${id}/topic`, { topic_category: topic }),
   setKeywordTopic: (id: number, topic: string) => api.patch(`/admin/keywords/${id}/topic`, { topic_category: topic }),
   paperQualityCheck: (arxivUrl: string) =>
-    api.post('/admin/paper-quality-check', { arxiv_url: arxivUrl }),
+    api.post('/admin/paper-quality-check', { arxiv_url: arxivUrl }, { timeout: 120000 }),
   paperQualitySave: (paper: any, signals: any, scores: any) =>
     api.post('/admin/paper-quality-save', { paper, signals, scores }),
 }
