@@ -183,58 +183,69 @@ class EnrichmentService:
 
     async def _fetch_github(self, arxiv_id: str, title: str) -> Optional[Dict]:
         """
-        1. Papers With Code → arXiv ID → GitHub URL (URL discovery)
-        2. GitHub REST API → accurate real-time star + fork count
-        Falls back to PwC star count if GitHub API call fails.
+        Discover the GitHub repo for a paper.
+        Strategy:
+          1. Papers With Code API (fast, arXiv-ID indexed) — may be dead/redirected
+          2. Fallback: GitHub Search API by paper title (top result by stars)
+        Then fetches accurate real-time star + fork count from GitHub REST API.
         """
-        # Strip version suffix (e.g. "2303.08774v2" → "2303.08774") — PwC uses base IDs
         clean_id = arxiv_id.split("v")[0] if "v" in arxiv_id else arxiv_id
 
         github_url: Optional[str] = None
         pwc_stars: int = 0
         pwc_forks: int = 0
 
-        async with httpx.AsyncClient(headers=self.headers, timeout=12) as client:
-            try:
+        # ── 1. Try Papers With Code ────────────────────────────────────────────
+        try:
+            async with httpx.AsyncClient(headers=self.headers, timeout=10, follow_redirects=False) as client:
                 resp = await client.get(
                     f"{self.pwc_url}/papers/",
                     params={"arxiv_id": clean_id},
                 )
-                if resp.status_code != 200:
-                    return None
+                if resp.status_code == 200:
+                    body = resp.json()
+                    results = (body.get("results") if isinstance(body, dict) else body) or []
+                    if results:
+                        paper_data = results[0]
+                        if paper_data.get("official") and paper_data["official"].get("url"):
+                            github_url = paper_data["official"]["url"]
+                            pwc_stars  = int(paper_data["official"].get("stars") or 0)
 
-                body = resp.json()
-                results = (body.get("results") if isinstance(body, dict) else body) or []
-                if not results:
-                    return None
+                        if not github_url:
+                            paper_id = paper_data.get("id", "")
+                            if paper_id:
+                                repos_resp = await client.get(
+                                    f"{self.pwc_url}/papers/{paper_id}/repositories/",
+                                    timeout=8,
+                                )
+                                if repos_resp.status_code == 200:
+                                    repos_body = repos_resp.json()
+                                    repos = (repos_body.get("results") if isinstance(repos_body, dict) else repos_body) or []
+                                    if repos:
+                                        top = max(repos, key=lambda r: r.get("stars", 0) if isinstance(r, dict) else 0)
+                                        github_url = top.get("url", "")
+                                        pwc_stars  = int(top.get("stars") or 0)
+                                        pwc_forks  = int(top.get("forks") or 0)
+        except Exception as e:
+            logger.debug(f"PwC fetch error {arxiv_id}: {e}")
 
-                paper_data = results[0]
-
-                # Try official repo first (has URL but stars may be stale/missing)
-                if paper_data.get("official") and paper_data["official"].get("url"):
-                    github_url  = paper_data["official"]["url"]
-                    pwc_stars   = int(paper_data["official"].get("stars") or 0)
-
-                # If no official, try repositories endpoint for top-starred repo
-                if not github_url:
-                    paper_id = paper_data.get("id", "")
-                    if paper_id:
-                        repos_resp = await client.get(
-                            f"{self.pwc_url}/papers/{paper_id}/repositories/",
-                            timeout=10,
-                        )
-                        if repos_resp.status_code == 200:
-                            repos_body = repos_resp.json()
-                            repos = (repos_body.get("results") if isinstance(repos_body, dict) else repos_body) or []
-                            if repos:
-                                top = max(repos, key=lambda r: r.get("stars", 0) if isinstance(r, dict) else 0)
-                                github_url = top.get("url", "")
-                                pwc_stars  = int(top.get("stars") or 0)
-                                pwc_forks  = int(top.get("forks") or 0)
-
+        # ── 2. Fallback: GitHub Search API by title ────────────────────────────
+        if not github_url and title:
+            try:
+                async with httpx.AsyncClient(headers=self.gh_headers, timeout=10) as gh:
+                    search_resp = await gh.get(
+                        f"{self.github_url}/search/repositories",
+                        params={"q": title, "sort": "stars", "order": "desc", "per_page": 1},
+                    )
+                    if search_resp.status_code == 200:
+                        items = search_resp.json().get("items", [])
+                        if items:
+                            top = items[0]
+                            github_url = top.get("html_url", "")
+                            pwc_stars  = top.get("stargazers_count", 0)
+                            pwc_forks  = top.get("forks_count", 0)
             except Exception as e:
-                logger.debug(f"PwC fetch error {arxiv_id}: {e}")
-                return None
+                logger.debug(f"GitHub search fallback error {arxiv_id}: {e}")
 
         if not github_url:
             return None
