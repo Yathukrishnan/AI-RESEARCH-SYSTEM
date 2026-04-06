@@ -1125,11 +1125,14 @@ async def paper_quality_check(
     )
     ai_svc = AIValidationService(settings.OPENROUTER_API_KEY)
 
+    # Pass paper dict with the CORRECT arxiv_id so GitHub lookup key matches
+    paper_for_gh = {**paper, "arxiv_id": arxiv_id}
+
     ss_task  = asyncio.create_task(enricher.get_semantic_scholar_data(arxiv_id))
     hf_task  = asyncio.create_task(enricher.get_huggingface_data(arxiv_id))
     hn_task  = asyncio.create_task(enricher.get_hackernews_data(arxiv_id, paper.get("title", "")))
     oa_task  = asyncio.create_task(enricher.get_openalex_data(arxiv_id))
-    gh_task  = asyncio.create_task(enricher.get_github_data_concurrent([paper]))
+    gh_task  = asyncio.create_task(enricher.get_github_data_concurrent([paper_for_gh]))
     ai_task  = asyncio.create_task(ai_svc.validate_paper(
         paper.get("title", ""),
         paper.get("abstract", ""),
@@ -1141,18 +1144,21 @@ async def paper_quality_check(
         return_exceptions=True,
     )
 
-    # Safely unwrap results (tasks may return exceptions on network failure)
+    # Safely unwrap results — exceptions (e.g. SS 429, network errors) become {}
     def _safe(result, default):
         return result if isinstance(result, dict) else default
 
-    ss   = _safe(ss_data, {})
-    hf   = _safe(hf_data, {})
-    hn   = _safe(hn_data, {})
-    oa   = _safe(oa_data, {})
-    gh   = _safe(gh_map.get(arxiv_id, {}) if isinstance(gh_map, dict) else {}, {})
-    ai   = _safe(ai_data, {})
+    ss = _safe(ss_data, {})
+    hf = _safe(hf_data, {})
+    hn = _safe(hn_data, {})
+    oa = _safe(oa_data, {})
+    ai = _safe(ai_data, {})
+    # GitHub map: key is arxiv_id, value may be None on no repo found
+    gh_raw = gh_map.get(arxiv_id) if isinstance(gh_map, dict) else None
+    gh = gh_raw if isinstance(gh_raw, dict) else {}
 
     # ── 4. Build unified row for scorer ────────────────────────────────────
+    # AI service returns keys prefixed with "ai_" (ai_relevance_score, ai_impact_score…)
     row = {
         **paper,
         "citation_count":            ss.get("citation_count", 0) or 0,
@@ -1166,10 +1172,10 @@ async def paper_quality_check(
         "hn_comments":               hn.get("hn_comments", 0) or 0,
         "citation_velocity":         oa.get("citation_velocity", 0) or 0,
         "openalex_citation_count":   oa.get("openalex_citation_count", 0) or 0,
-        "ai_relevance_score":        ai.get("relevance_score", 0) or 0,
-        "ai_impact_score":           ai.get("impact_score", 0) or 0,
+        "ai_relevance_score":        ai.get("ai_relevance_score", 0) or 0,
+        "ai_impact_score":           ai.get("ai_impact_score", 0) or 0,
         "is_ai_relevant":            ai.get("is_ai_relevant", False),
-        # Platform signals are 0 since this is a live check (not in our DB)
+        # Platform signals are 0 for a live check (paper not in our DB yet)
         "view_count": 0, "save_count": 0, "click_count": 0,
         "star_velocity": 0, "normalized_score": 0, "keyword_score": 0,
     }
@@ -1217,10 +1223,10 @@ async def paper_quality_check(
             "pdf_url":         paper.get("pdf_url"),
         },
         "signals": {
-            "ai_relevance_score":         ai.get("relevance_score", 0) or 0,
-            "ai_impact_score":            ai.get("impact_score", 0) or 0,
-            "ai_topic_tags":              ai.get("topic_tags", []),
-            "ai_summary":                 ai.get("summary", ""),
+            "ai_relevance_score":         ai.get("ai_relevance_score", 0) or 0,
+            "ai_impact_score":            ai.get("ai_impact_score", 0) or 0,
+            "ai_topic_tags":              ai.get("ai_topic_tags", []),
+            "ai_summary":                 ai.get("ai_summary", ""),
             "is_ai_relevant":             ai.get("is_ai_relevant", False),
             "citation_count":             ss.get("citation_count", 0) or 0,
             "influential_citation_count": ss.get("influential_citation_count", 0) or 0,

@@ -65,8 +65,9 @@ async def fetch_arxiv_page(client: httpx.AsyncClient, query: str, start: int, ma
 
 def parse_arxiv_entry(entry) -> Optional[Dict]:
     """Parse a single arXiv feed entry."""
-    arxiv_id = entry.get("id", "").split("/abs/")[-1].replace("v", "").strip()
-    # Handle versioned IDs like 2401.12345v2 -> 2401.12345
+    # Strip version suffix properly: 2401.12345v2 -> 2401.12345
+    # Do NOT use .replace("v","") — it corrupts IDs by eating the digit after 'v'
+    arxiv_id = entry.get("id", "").split("/abs/")[-1].strip()
     if "v" in arxiv_id.split(".")[-1]:
         arxiv_id = arxiv_id.rsplit("v", 1)[0]
 
