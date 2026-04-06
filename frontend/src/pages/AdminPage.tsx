@@ -2474,6 +2474,7 @@ function SignalBadge({ label, value, icon }: { label: string; value: string | nu
 function PaperQualityCheck() {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [result, setResult] = useState<any>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -2490,6 +2491,20 @@ function PaperQualityCheck() {
       setError(err?.response?.data?.detail ?? 'Something went wrong. Check the arXiv ID and try again.')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const addToDatabase = async () => {
+    if (!result) return
+    setSaving(true)
+    try {
+      await adminApi.paperQualitySave(result.paper, result.signals, result.scores)
+      setResult((prev: any) => ({ ...prev, in_database: true }))
+      toast.success('Paper added to database with all scores!')
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail ?? 'Failed to save paper')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -2552,14 +2567,30 @@ function PaperQualityCheck() {
                   {paper.published_at ? ` · ${new Date(paper.published_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}` : ''}
                 </p>
               </div>
-              <a
-                href={paper.pdf_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="shrink-0 flex items-center gap-1.5 text-xs text-accent-2 hover:underline"
-              >
-                <ExternalLink size={13} /> arXiv
-              </a>
+              <div className="flex flex-col items-end gap-2 shrink-0">
+                <a
+                  href={paper.pdf_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 text-xs text-accent-2 hover:underline"
+                >
+                  <ExternalLink size={13} /> arXiv
+                </a>
+                {result.in_database ? (
+                  <span className="flex items-center gap-1.5 text-xs bg-green-500/15 text-green-400 border border-green-500/25 px-2.5 py-1 rounded-full font-medium">
+                    <CheckCircle size={12} /> In Database
+                  </span>
+                ) : (
+                  <button
+                    onClick={addToDatabase}
+                    disabled={saving}
+                    className="flex items-center gap-1.5 text-xs bg-accent/15 text-accent-2 border border-accent/30 px-3 py-1.5 rounded-full font-semibold hover:bg-accent/25 disabled:opacity-50 transition-all"
+                  >
+                    {saving ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
+                    {saving ? 'Adding…' : 'Add to Database'}
+                  </button>
+                )}
+              </div>
             </div>
             {signals.ai_summary && (
               <p className="text-xs text-slate-300 leading-relaxed border-t border-accent/10 pt-3">{signals.ai_summary}</p>

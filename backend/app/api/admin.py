@@ -38,6 +38,11 @@ class TopicCategoryCreate(BaseModel):
 class PaperQualityCheckRequest(BaseModel):
     arxiv_url: str  # full URL like https://arxiv.org/abs/2301.00001 or just the ID
 
+class PaperQualitySaveRequest(BaseModel):
+    paper: dict
+    signals: dict
+    scores: dict
+
 
 @router.get("/dashboard")
 async def dashboard(db: TursoClient = Depends(get_db), _: dict = Depends(require_admin)):
@@ -963,9 +968,118 @@ async def update_user_role(
     return {"status": "updated"}
 
 
+@router.post("/paper-quality-save")
+async def paper_quality_save(
+    req: PaperQualitySaveRequest,
+    db: TursoClient = Depends(get_db),
+    _: dict = Depends(require_admin),
+):
+    """
+    Save a quality-checked paper (with all pre-computed scores and signals) into the database.
+    Skips if the paper already exists.
+    """
+    import json as _json
+    import hashlib
+    from datetime import datetime, timezone
+    from app.core.database import get_system_config
+    from app.services.ai_service import compute_tfidf_keyword_score, AI_KEYWORDS
+
+    p       = req.paper
+    sig     = req.signals
+    scores  = req.scores
+    arxiv_id = p.get("arxiv_id", "").strip()
+
+    if not arxiv_id:
+        raise HTTPException(status_code=400, detail="arxiv_id is required")
+
+    # Prevent duplicates
+    existing = await db.fetchone("SELECT rowid FROM papers WHERE arxiv_id = ?", [arxiv_id])
+    if existing:
+        return {"status": "already_exists", "arxiv_id": arxiv_id}
+
+    # Keyword score
+    text = f"{p.get('title', '')} {p.get('abstract', '')}"
+    kw_score = compute_tfidf_keyword_score(text, AI_KEYWORDS)
+
+    # display_week
+    week_str = await get_system_config("CURRENT_WEEK")
+    try:
+        current_week = int(week_str) if week_str else 1
+    except (ValueError, TypeError):
+        current_week = 1
+
+    hash_id  = hashlib.sha256(arxiv_id.encode()).hexdigest()
+    now      = datetime.now(timezone.utc).isoformat()
+
+    blended      = float(scores.get("blended_score", 0))
+    trend_score  = float(scores.get("trending_score", 0))
+    is_trending  = 1 if trend_score >= 0.4 else 0
+    is_above     = 1 if blended >= 0.1 else 0
+
+    if trend_score >= 0.5:
+        t_label = "🔥 Trending"
+    elif float(scores.get("rising_score", 0)) >= 0.3:
+        t_label = "📈 Rising"
+    elif blended >= 0.7:
+        t_label = "💎 Hidden Gem"
+    else:
+        t_label = None
+
+    await db.execute(
+        """INSERT INTO papers (
+            arxiv_id, hash_id, title, abstract, authors, categories,
+            primary_category, published_at, updated_at, pdf_url, html_url,
+            doi, journal_ref, keyword_score, display_week, created_at,
+            current_score, normalized_score, score_type,
+            trending_score, rising_score, gem_score, platform_score,
+            is_trending, trend_label, is_above_threshold,
+            ai_relevance_score, ai_impact_score, ai_summary, ai_topic_tags,
+            is_ai_validated, citation_count, influential_citation_count,
+            h_index_max, github_stars, github_forks, github_url,
+            hf_upvotes, hn_points, hn_comments,
+            citation_velocity, is_enriched, last_enriched_at, last_scored_at
+        ) VALUES (
+            ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,
+            ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
+        )""",
+        [
+            arxiv_id, hash_id,
+            p.get("title", ""), p.get("abstract", ""),
+            _json.dumps(p.get("authors", [])),
+            _json.dumps(p.get("categories", [])),
+            p.get("primary_category", "cs.AI"),
+            p.get("published_at"), p.get("published_at"),
+            p.get("pdf_url"), p.get("pdf_url"),
+            None, None,
+            kw_score, current_week + 1, now,
+            # scores
+            blended, blended, scores.get("score_type", "new"),
+            scores.get("trending_score", 0), scores.get("rising_score", 0),
+            scores.get("gem_score", 0), scores.get("platform_score", 0),
+            is_trending, t_label, is_above,
+            # AI signals
+            sig.get("ai_relevance_score", 0), sig.get("ai_impact_score", 0),
+            sig.get("ai_summary", ""),
+            _json.dumps(sig.get("ai_topic_tags", [])),
+            1,
+            # enrichment signals
+            sig.get("citation_count", 0), sig.get("influential_citation_count", 0),
+            sig.get("h_index_max", 0),
+            sig.get("github_stars", 0), sig.get("github_forks", 0), sig.get("github_url"),
+            sig.get("hf_upvotes", 0), sig.get("hn_points", 0), sig.get("hn_comments", 0),
+            sig.get("citation_velocity", 0),
+            1, now, now,
+        ]
+    )
+
+    await cache_invalidate_pattern("feed:*")
+    return {"status": "added", "arxiv_id": arxiv_id}
+
+
 @router.post("/paper-quality-check")
 async def paper_quality_check(
     req: PaperQualityCheckRequest,
+    db: TursoClient = Depends(get_db),
     _: dict = Depends(require_admin),
 ):
     """
@@ -989,7 +1103,15 @@ async def paper_quality_check(
 
     arxiv_id = re.sub(r'v\d+$', '', match.group(1))  # strip version suffix
 
-    # ── 2. Fetch paper metadata from arXiv ─────────────────────────────────
+    # ── 2. Check if paper already in our DB ────────────────────────────────
+    existing_row = await db.fetchone(
+        "SELECT rowid as id, current_score, normalized_score, is_trending, trend_label, "
+        "hf_upvotes, hn_points, citation_count, github_stars FROM papers WHERE arxiv_id = ?",
+        [arxiv_id]
+    )
+    in_database = existing_row is not None
+
+    # ── 3. Fetch paper metadata from arXiv ─────────────────────────────────
     paper = await fetch_single_paper(arxiv_id)
     if not paper:
         raise HTTPException(status_code=404, detail=f"Paper {arxiv_id} not found on arXiv.")
@@ -1082,6 +1204,8 @@ async def paper_quality_check(
         quality_label = "Low"
 
     return {
+        "in_database": in_database,
+        "db_paper_id": existing_row["id"] if existing_row else None,
         "paper": {
             "arxiv_id":        arxiv_id,
             "title":           paper.get("title"),
