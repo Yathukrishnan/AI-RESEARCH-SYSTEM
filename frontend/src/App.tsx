@@ -7,6 +7,7 @@ import { LoginPage } from '@/pages/LoginPage'
 import { LandingPage } from '@/pages/LandingPage'
 import { TopicPage } from '@/pages/TopicPage'
 import { ReportPage } from '@/pages/ReportPage'
+import AutonomousFeed from '@/pages/AutonomousFeed'
 import { useAuthStore } from '@/stores/authStore'
 
 function RequireAdmin({ children }: { children: React.ReactNode }) {
@@ -35,6 +36,9 @@ export default function App() {
 
       {/* Category pages (existing) */}
       <Route path="/papers/:type" element={<CategoryPage />} />
+
+      {/* AI Editor Feed — Hacker News-style autonomous digest */}
+      <Route path="/editor-feed" element={<AutonomousFeed />} />
 
       <Route path="/login" element={<LoginPage />} />
       <Route

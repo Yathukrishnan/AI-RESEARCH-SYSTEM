@@ -11,7 +11,7 @@ from app.core.turso import db as turso_db
 from app.core.database import init_db, get_system_config, set_system_config
 from app.core.security import hash_password
 from app.tasks.scheduler import start_scheduler, stop_scheduler
-from app.api import auth, feed, papers, alerts, admin
+from app.api import auth, feed, papers, alerts, admin, editor
 
 logging.basicConfig(
     level=logging.INFO,
@@ -291,6 +291,7 @@ app.include_router(feed.router,   prefix="/api")
 app.include_router(papers.router, prefix="/api")
 app.include_router(alerts.router, prefix="/api")
 app.include_router(admin.router,  prefix="/api")
+app.include_router(editor.router, prefix="/api")
 
 
 @app.get("/api/health")

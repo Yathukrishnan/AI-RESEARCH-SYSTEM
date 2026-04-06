@@ -109,6 +109,13 @@ export function Navbar() {
               Explore →
             </Link>
           )}
+          {/* Live Feed — always visible shortcut to HN-style editor digest */}
+          <Link
+            to="/editor-feed"
+            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-surface border border-[#ff6600]/30 rounded-lg text-xs text-[#ff6600]/70 hover:text-[#ff6600] hover:border-[#ff6600]/60 transition-all"
+          >
+            Live Feed
+          </Link>
           {isAuthenticated && role === 'admin' && (
             <Link
               to="/admin"
