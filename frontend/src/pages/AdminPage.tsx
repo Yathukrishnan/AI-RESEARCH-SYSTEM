@@ -5,7 +5,8 @@ import {
   LayoutDashboard, FileText, Settings, Tag, RefreshCw, Plus, Trash2,
   Play, ArrowLeft, Database, TrendingUp, Brain, CheckCircle, Loader2,
   Activity, Users, Eye, Copy, Shield, ShieldOff, Wifi, WifiOff, Zap,
-  Clock, BookOpen, Star, AlertTriangle, Download, Layers, Globe, Network
+  Clock, BookOpen, Star, AlertTriangle, Download, Layers, Globe, Network,
+  Search, Github, MessageSquare, FlaskConical, ExternalLink
 } from 'lucide-react'
 import { adminApi } from '@/lib/api'
 import { AdminStats, ConfigItem, Keyword, Subject, AnalysisLog, AdminUser } from '@/lib/types'
@@ -27,6 +28,7 @@ function AdminSidebar() {
     { to: '/admin/users', label: 'Users', icon: Users },
     { to: '/admin/config', label: 'Config', icon: Settings },
     { to: '/admin/apis', label: 'APIs', icon: Wifi },
+    { to: '/admin/quality-check', label: 'Quality Check', icon: FlaskConical },
   ]
 
   return (
@@ -2430,6 +2432,218 @@ function ApisAdmin() {
   )
 }
 
+// ── Paper Quality Check ───────────────────────────────────────────────────────
+
+function ScoreBar({ label, value, color = 'accent' }: { label: string; value: number; color?: string }) {
+  const pct = Math.round(value * 100)
+  const colorMap: Record<string, string> = {
+    accent: 'bg-accent',
+    teal: 'bg-teal-500',
+    rose: 'bg-rose-500',
+    amber: 'bg-amber-500',
+    purple: 'bg-purple-500',
+    sky: 'bg-sky-500',
+    green: 'bg-green-500',
+  }
+  const bar = colorMap[color] ?? 'bg-accent'
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between text-xs">
+        <span className="text-slate-400">{label}</span>
+        <span className="font-semibold text-white tabular-nums">{pct}%</span>
+      </div>
+      <div className="h-2 bg-surface-3 rounded-full overflow-hidden">
+        <div className={`h-full ${bar} rounded-full transition-all duration-700`} style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  )
+}
+
+function SignalBadge({ label, value, icon }: { label: string; value: string | number; icon: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-2 bg-surface-2 rounded-xl px-3 py-2.5">
+      <span className="text-muted shrink-0">{icon}</span>
+      <div className="min-w-0">
+        <p className="text-[10px] text-muted uppercase tracking-wide">{label}</p>
+        <p className="text-sm font-semibold text-white truncate">{value}</p>
+      </div>
+    </div>
+  )
+}
+
+function PaperQualityCheck() {
+  const [input, setInput] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [result, setResult] = useState<any>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const run = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!input.trim()) return
+    setLoading(true)
+    setResult(null)
+    setError(null)
+    try {
+      const res: any = await adminApi.paperQualityCheck(input.trim())
+      setResult(res.data)
+    } catch (err: any) {
+      setError(err?.response?.data?.detail ?? 'Something went wrong. Check the arXiv ID and try again.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const paper   = result?.paper
+  const signals = result?.signals
+  const scores  = result?.scores
+  const verdict = result?.verdict
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-xl font-bold text-white">Paper Quality Check</h1>
+        <p className="text-sm text-muted mt-1">Enter an arXiv link or ID to run all scoring signals and get a full quality breakdown.</p>
+      </div>
+
+      {/* Input */}
+      <form onSubmit={run} className="flex gap-3">
+        <input
+          type="text"
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          placeholder="https://arxiv.org/abs/2301.00001  or  2301.00001"
+          className="flex-1 bg-surface border border-accent/20 rounded-xl px-4 py-2.5 text-sm text-white placeholder-muted focus:outline-none focus:border-accent/50"
+        />
+        <button
+          type="submit"
+          disabled={loading || !input.trim()}
+          className="flex items-center gap-2 px-5 py-2.5 bg-accent/20 border border-accent/30 text-accent-2 text-sm font-semibold rounded-xl hover:bg-accent/30 disabled:opacity-50 transition-all"
+        >
+          {loading ? <Loader2 size={15} className="animate-spin" /> : <Search size={15} />}
+          {loading ? 'Checking…' : 'Check Paper'}
+        </button>
+      </form>
+
+      {error && (
+        <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 text-sm text-red-400">{error}</div>
+      )}
+
+      {loading && (
+        <div className="bg-surface border border-accent/15 rounded-2xl p-8 flex flex-col items-center gap-3 text-muted">
+          <Loader2 size={28} className="animate-spin text-accent-2" />
+          <p className="text-sm">Fetching from arXiv · querying Semantic Scholar · HuggingFace · HackerNews · OpenAlex · GitHub · running AI validation…</p>
+        </div>
+      )}
+
+      {result && (
+        <div className="space-y-5">
+
+          {/* Paper header */}
+          <div className="bg-surface border border-accent/15 rounded-2xl p-5 space-y-3">
+            <div className="flex items-start justify-between gap-4">
+              <div className="space-y-1 min-w-0">
+                <h2 className="text-base font-bold text-white leading-snug">{paper.title}</h2>
+                <p className="text-xs text-muted">
+                  {paper.primary_category} · {paper.authors?.slice(0, 3).map((a: any) => a.name ?? a).join(', ')}
+                  {paper.authors?.length > 3 ? ` +${paper.authors.length - 3} more` : ''}
+                </p>
+                <p className="text-xs text-muted">
+                  Published {verdict.age_days < 1 ? 'today' : `${verdict.age_days}d ago`}
+                  {paper.published_at ? ` · ${new Date(paper.published_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}` : ''}
+                </p>
+              </div>
+              <a
+                href={paper.pdf_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="shrink-0 flex items-center gap-1.5 text-xs text-accent-2 hover:underline"
+              >
+                <ExternalLink size={13} /> arXiv
+              </a>
+            </div>
+            {signals.ai_summary && (
+              <p className="text-xs text-slate-300 leading-relaxed border-t border-accent/10 pt-3">{signals.ai_summary}</p>
+            )}
+            {signals.ai_topic_tags?.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                {signals.ai_topic_tags.map((t: string) => (
+                  <span key={t} className="text-[11px] bg-accent/10 text-accent-2 px-2 py-0.5 rounded-full">{t}</span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Verdict banner */}
+          <div className={cn(
+            'rounded-2xl p-4 border flex items-center gap-4',
+            verdict.quality === 'High'   ? 'bg-green-500/8 border-green-500/25' :
+            verdict.quality === 'Medium' ? 'bg-amber-500/8 border-amber-500/25' :
+                                           'bg-surface border-accent/15'
+          )}>
+            <div className="text-3xl leading-none">
+              {verdict.trend_label ? verdict.trend_label.split(' ')[0] : verdict.quality === 'High' ? '✅' : verdict.quality === 'Medium' ? '🔶' : '⬜'}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold text-white">
+                {verdict.trend_label ?? `${verdict.quality} Quality`}
+                {signals.is_ai_relevant && <span className="ml-2 text-[11px] bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded-full font-medium">AI Relevant</span>}
+              </p>
+              <p className="text-xs text-muted mt-0.5">
+                Overall score <span className="text-white font-semibold">{Math.round(scores.blended_score * 100)}%</span>
+                {verdict.has_code && <span className="ml-2">· has code repo</span>}
+                {verdict.has_social_buzz && <span className="ml-2">· community buzz</span>}
+                {verdict.is_trending && <span className="ml-2 text-orange-400">· trending now</span>}
+                {verdict.is_rising && !verdict.is_trending && <span className="ml-2 text-sky-400">· rising</span>}
+              </p>
+            </div>
+            <div className="text-right shrink-0">
+              <p className="text-2xl font-black text-white tabular-nums">{Math.round(scores.blended_score * 100)}<span className="text-sm font-normal text-muted">/100</span></p>
+              <p className="text-[11px] text-muted capitalize">{scores.score_type} paper</p>
+            </div>
+          </div>
+
+          {/* Score breakdown */}
+          <div className="bg-surface border border-accent/15 rounded-2xl p-5 space-y-4">
+            <h3 className="text-sm font-semibold text-white">Score Breakdown</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3">
+              <ScoreBar label="Base Score"      value={scores.base_score}      color="accent"  />
+              <ScoreBar label="Trending Score"  value={scores.trending_score}  color="rose"    />
+              <ScoreBar label="Rising Score"    value={scores.rising_score}    color="sky"     />
+              <ScoreBar label="Gem Score"       value={scores.gem_score}       color="amber"   />
+              <ScoreBar label="AI Relevance"    value={signals.ai_relevance_score} color="purple" />
+              <ScoreBar label="AI Impact"       value={signals.ai_impact_score}    color="teal"   />
+            </div>
+          </div>
+
+          {/* Raw signals */}
+          <div className="bg-surface border border-accent/15 rounded-2xl p-5 space-y-4">
+            <h3 className="text-sm font-semibold text-white">Raw Signals</h3>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+              <SignalBadge label="HF Upvotes"       value={signals.hf_upvotes.toLocaleString()}            icon={<Star size={14} />} />
+              <SignalBadge label="HN Points"        value={signals.hn_points.toLocaleString()}             icon={<TrendingUp size={14} />} />
+              <SignalBadge label="HN Comments"      value={signals.hn_comments.toLocaleString()}           icon={<MessageSquare size={14} />} />
+              <SignalBadge label="Citations"        value={signals.citation_count.toLocaleString()}        icon={<BookOpen size={14} />} />
+              <SignalBadge label="Influential Cit." value={signals.influential_citation_count.toLocaleString()} icon={<Zap size={14} />} />
+              <SignalBadge label="Cit. Velocity"    value={`${Math.round(signals.citation_velocity * 100)}%`}  icon={<Activity size={14} />} />
+              <SignalBadge label="GitHub Stars"     value={signals.github_stars.toLocaleString()}          icon={<Github size={14} />} />
+              <SignalBadge label="GitHub Forks"     value={signals.github_forks.toLocaleString()}          icon={<Github size={14} />} />
+              <SignalBadge label="Max H-Index"      value={signals.h_index_max ?? '—'}                    icon={<Users size={14} />} />
+              <SignalBadge label="OpenAlex Cit."    value={signals.openalex_citation_count.toLocaleString()} icon={<Database size={14} />} />
+            </div>
+            {signals.github_url && (
+              <a href={signals.github_url} target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-xs text-sky-400 hover:underline">
+                <Github size={12} /> {signals.github_url}
+              </a>
+            )}
+          </div>
+
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Admin Layout ──────────────────────────────────────────────────────────────
 
 export function AdminPage() {
@@ -2461,6 +2675,7 @@ export function AdminPage() {
             <Route path="users" element={<UsersAdmin />} />
             <Route path="config" element={<ConfigAdmin />} />
             <Route path="apis" element={<ApisAdmin />} />
+            <Route path="quality-check" element={<PaperQualityCheck />} />
           </Routes>
         </main>
       </div>

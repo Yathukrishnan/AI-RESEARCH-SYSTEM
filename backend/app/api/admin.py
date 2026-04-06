@@ -35,6 +35,9 @@ class TopicCategoryCreate(BaseModel):
     hook: str         # journalist narrative hook shown on landing page
     color: str = "slate"  # tailwind colour name
 
+class PaperQualityCheckRequest(BaseModel):
+    arxiv_url: str  # full URL like https://arxiv.org/abs/2301.00001 or just the ID
+
 
 @router.get("/dashboard")
 async def dashboard(db: TursoClient = Depends(get_db), _: dict = Depends(require_admin)):
@@ -958,3 +961,171 @@ async def update_user_role(
         raise HTTPException(status_code=400, detail="Role must be 'admin' or 'user'")
     await db.execute("UPDATE users SET role = ? WHERE rowid = ?", [role, user_id])
     return {"status": "updated"}
+
+
+@router.post("/paper-quality-check")
+async def paper_quality_check(
+    req: PaperQualityCheckRequest,
+    _: dict = Depends(require_admin),
+):
+    """
+    Fetch an arXiv paper by URL or ID and run every scoring signal on it
+    (Semantic Scholar, GitHub, HuggingFace, HackerNews, OpenAlex, AI validation)
+    then return a full score breakdown.
+    """
+    import re
+    import asyncio
+    from app.core.config import settings
+    from app.services.arxiv_fetcher import fetch_single_paper
+    from app.services.enrichment_service import EnrichmentService
+    from app.services.ai_service import AIValidationService
+    from app.services import scorer as sc
+
+    # ── 1. Parse arXiv ID ───────────────────────────────────────────────────
+    raw = req.arxiv_url.strip()
+    match = re.search(r'(\d{4}\.\d{4,5}(?:v\d+)?)', raw)
+    if not match:
+        raise HTTPException(status_code=400, detail="Could not parse an arXiv ID from the input. Use a URL like https://arxiv.org/abs/2301.00001 or just the ID.")
+
+    arxiv_id = re.sub(r'v\d+$', '', match.group(1))  # strip version suffix
+
+    # ── 2. Fetch paper metadata from arXiv ─────────────────────────────────
+    paper = await fetch_single_paper(arxiv_id)
+    if not paper:
+        raise HTTPException(status_code=404, detail=f"Paper {arxiv_id} not found on arXiv.")
+
+    # ── 3. Run all enrichment in parallel ──────────────────────────────────
+    enricher = EnrichmentService(
+        settings.SEMANTIC_SCHOLAR_API_URL,
+        settings.PAPERS_WITH_CODE_API_URL,
+        github_token=settings.GITHUB_API_TOKEN,
+        github_api_url=settings.GITHUB_API_URL,
+    )
+    ai_svc = AIValidationService(settings.OPENROUTER_API_KEY)
+
+    ss_task  = asyncio.create_task(enricher.get_semantic_scholar_data(arxiv_id))
+    hf_task  = asyncio.create_task(enricher.get_huggingface_data(arxiv_id))
+    hn_task  = asyncio.create_task(enricher.get_hackernews_data(arxiv_id, paper.get("title", "")))
+    oa_task  = asyncio.create_task(enricher.get_openalex_data(arxiv_id))
+    gh_task  = asyncio.create_task(enricher.get_github_data_concurrent([paper]))
+    ai_task  = asyncio.create_task(ai_svc.validate_paper(
+        paper.get("title", ""),
+        paper.get("abstract", ""),
+        [],
+    ))
+
+    ss_data, hf_data, hn_data, oa_data, gh_map, ai_data = await asyncio.gather(
+        ss_task, hf_task, hn_task, oa_task, gh_task, ai_task,
+        return_exceptions=True,
+    )
+
+    # Safely unwrap results (tasks may return exceptions on network failure)
+    def _safe(result, default):
+        return result if isinstance(result, dict) else default
+
+    ss   = _safe(ss_data, {})
+    hf   = _safe(hf_data, {})
+    hn   = _safe(hn_data, {})
+    oa   = _safe(oa_data, {})
+    gh   = _safe(gh_map.get(arxiv_id, {}) if isinstance(gh_map, dict) else {}, {})
+    ai   = _safe(ai_data, {})
+
+    # ── 4. Build unified row for scorer ────────────────────────────────────
+    row = {
+        **paper,
+        "citation_count":            ss.get("citation_count", 0) or 0,
+        "influential_citation_count": ss.get("influential_citation_count", 0) or 0,
+        "h_index_max":               ss.get("h_index_max", 0) or 0,
+        "github_stars":              gh.get("github_stars", 0) or 0,
+        "github_forks":              gh.get("github_forks", 0) or 0,
+        "github_url":                gh.get("github_url"),
+        "hf_upvotes":                hf.get("hf_upvotes", 0) or 0,
+        "hn_points":                 hn.get("hn_points", 0) or 0,
+        "hn_comments":               hn.get("hn_comments", 0) or 0,
+        "citation_velocity":         oa.get("citation_velocity", 0) or 0,
+        "openalex_citation_count":   oa.get("openalex_citation_count", 0) or 0,
+        "ai_relevance_score":        ai.get("relevance_score", 0) or 0,
+        "ai_impact_score":           ai.get("impact_score", 0) or 0,
+        "is_ai_relevant":            ai.get("is_ai_relevant", False),
+        # Platform signals are 0 since this is a live check (not in our DB)
+        "view_count": 0, "save_count": 0, "click_count": 0,
+        "star_velocity": 0, "normalized_score": 0, "keyword_score": 0,
+    }
+
+    # ── 5. Compute all scores ───────────────────────────────────────────────
+    base_score, score_type   = sc.compute_score(row)
+    trending_score           = sc.compute_trending_score(row)
+    rising_score             = sc.compute_rising_score(row)
+    # set normalized_score proxy so gem_score and rising_score work properly
+    row["normalized_score"]  = base_score
+    gem_score                = sc.compute_gem_score(row)
+    platform_score           = sc.compute_platform_score(row)
+    blended_score, _         = sc.compute_blended_score(row)
+
+    # ── 6. Verdict ──────────────────────────────────────────────────────────
+    age = sc._age_days(paper.get("published_at"))
+
+    if trending_score >= 0.5:
+        trend_label = "🔥 Trending"
+    elif rising_score >= 0.3:
+        trend_label = "📈 Rising"
+    elif blended_score >= 0.7 and trending_score < 0.2:
+        trend_label = "💎 Hidden Gem"
+    else:
+        trend_label = None
+
+    if blended_score >= 0.75:
+        quality_label = "High"
+    elif blended_score >= 0.45:
+        quality_label = "Medium"
+    else:
+        quality_label = "Low"
+
+    return {
+        "paper": {
+            "arxiv_id":        arxiv_id,
+            "title":           paper.get("title"),
+            "abstract":        paper.get("abstract"),
+            "authors":         paper.get("authors", []),
+            "primary_category": paper.get("primary_category"),
+            "categories":      paper.get("categories", []),
+            "published_at":    paper.get("published_at"),
+            "pdf_url":         paper.get("pdf_url"),
+        },
+        "signals": {
+            "ai_relevance_score":         ai.get("relevance_score", 0) or 0,
+            "ai_impact_score":            ai.get("impact_score", 0) or 0,
+            "ai_topic_tags":              ai.get("topic_tags", []),
+            "ai_summary":                 ai.get("summary", ""),
+            "is_ai_relevant":             ai.get("is_ai_relevant", False),
+            "citation_count":             ss.get("citation_count", 0) or 0,
+            "influential_citation_count": ss.get("influential_citation_count", 0) or 0,
+            "h_index_max":                ss.get("h_index_max", 0) or 0,
+            "citation_velocity":          oa.get("citation_velocity", 0) or 0,
+            "openalex_citation_count":    oa.get("openalex_citation_count", 0) or 0,
+            "github_stars":               gh.get("github_stars", 0) or 0,
+            "github_forks":               gh.get("github_forks", 0) or 0,
+            "github_url":                 gh.get("github_url"),
+            "hf_upvotes":                 hf.get("hf_upvotes", 0) or 0,
+            "hn_points":                  hn.get("hn_points", 0) or 0,
+            "hn_comments":                hn.get("hn_comments", 0) or 0,
+        },
+        "scores": {
+            "base_score":      base_score,
+            "score_type":      score_type,
+            "trending_score":  trending_score,
+            "rising_score":    rising_score,
+            "gem_score":       gem_score,
+            "platform_score":  platform_score,
+            "blended_score":   blended_score,
+        },
+        "verdict": {
+            "trend_label":    trend_label,
+            "age_days":       round(age, 1),
+            "quality":        quality_label,
+            "is_trending":    trending_score >= 0.4,
+            "is_rising":      rising_score >= 0.25,
+            "has_social_buzz": hf.get("hf_upvotes", 0) > 0 or hn.get("hn_points", 0) > 0,
+            "has_code":       bool(gh.get("github_url")),
+        },
+    }

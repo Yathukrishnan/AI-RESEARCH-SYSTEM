@@ -121,6 +121,8 @@ export const adminApi = {
   autoAssignTopics: () => api.post('/admin/auto-assign-topics'),
   setSubjectTopic: (id: number, topic: string) => api.patch(`/admin/subjects/${id}/topic`, { topic_category: topic }),
   setKeywordTopic: (id: number, topic: string) => api.patch(`/admin/keywords/${id}/topic`, { topic_category: topic }),
+  paperQualityCheck: (arxivUrl: string) =>
+    api.post('/admin/paper-quality-check', { arxiv_url: arxivUrl }),
 }
 
 export const dashboardApi = {
