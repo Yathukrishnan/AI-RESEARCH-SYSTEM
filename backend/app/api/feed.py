@@ -674,6 +674,118 @@ async def get_stats(db: TursoClient = Depends(get_db)):
     }
 
 
+# ── Category Digest Feed ─────────────────────────────────────────────────────
+
+# arXiv prefix → (topic label, emoji)
+_DIGEST_TOPIC_MAP = {
+    "cs.CV":    ("Computer Vision", "👁️"),
+    "cs.CL":    ("Language & AI", "💬"),
+    "cs.LG":    ("Machine Learning", "🧠"),
+    "cs.AI":    ("Artificial Intelligence", "🤖"),
+    "cs.RO":    ("Robotics", "🦾"),
+    "cs.CR":    ("Security & Privacy", "🔐"),
+    "cs.SE":    ("Software Engineering", "💻"),
+    "quant-ph": ("Quantum Computing", "⚛️"),
+    "stat.ML":  ("Statistics & ML", "📊"),
+    "cs.IR":    ("Information Retrieval", "🔍"),
+    "q-bio":    ("Computational Biology", "🧬"),
+    "eess.SP":  ("Signal Processing", "📡"),
+    "math.OC":  ("Optimization", "📈"),
+    "cs.HC":    ("Human-Computer Interaction", "🖥️"),
+}
+
+def _map_to_digest_topic(primary_category: str) -> tuple:
+    """Map a primary_category to (topic_label, emoji). Falls back to category code."""
+    if not primary_category:
+        return None, None
+    for prefix, (label, emoji) in _DIGEST_TOPIC_MAP.items():
+        if primary_category.startswith(prefix):
+            return label, emoji
+    return None, None
+
+
+@router.get("/feed/digests")
+async def get_feed_digests(db: TursoClient = Depends(get_db)):
+    """
+    Returns journalist-style news articles, one per top category.
+    Each article covers 4-5 top papers and is written like a news brief.
+    Cached in Redis for 6 hours.
+    """
+    import asyncio as _asyncio
+    from app.services.ai_service import AIValidationService
+    from app.core.config import settings
+
+    cache_key = f"feed:digests:{date.today().isoformat()}"
+    cached = await cache_get(cache_key)
+    if cached:
+        return cached
+
+    current_week = await _current_week(db)
+
+    # Fetch top visible papers with hook + summary
+    rows = await db.fetchall(
+        "SELECT rowid as id, arxiv_id, title, abstract, ai_summary, primary_category, "
+        "normalized_score, current_score, hook_text, hf_upvotes, hn_points, published_at "
+        "FROM papers "
+        "WHERE is_above_threshold=1 AND is_deleted=0 AND is_duplicate=0 "
+        "AND display_week <= ? "
+        "ORDER BY normalized_score DESC LIMIT 600",
+        [current_week]
+    )
+
+    # Group by mapped topic — keep top 5 per topic
+    from collections import defaultdict
+    groups: dict = defaultdict(list)
+    for p in rows:
+        label, emoji = _map_to_digest_topic(p.get("primary_category") or "")
+        if label and len(groups[label]) < 5:
+            groups[label].append((p, emoji))
+
+    # Keep only topics with at least 3 papers, sorted by count desc, top 6
+    eligible = [
+        (label, papers_emojis)
+        for label, papers_emojis in groups.items()
+        if len(papers_emojis) >= 3
+    ]
+    eligible.sort(key=lambda x: len(x[1]), reverse=True)
+    eligible = eligible[:6]
+
+    if not eligible:
+        return []
+
+    ai = AIValidationService(settings.OPENROUTER_API_KEY)
+
+    async def _make_digest(label: str, papers_emojis: list):
+        emoji = papers_emojis[0][1]
+        papers = [p for p, _ in papers_emojis]
+        article = await ai.generate_feed_digest(label, emoji, papers)
+        return {
+            "topic":   label,
+            "emoji":   emoji,
+            "article": article,
+            "papers": [
+                {
+                    "id":         p["id"],
+                    "arxiv_id":   p["arxiv_id"],
+                    "title":      p["title"],
+                    "hook_text":  p.get("hook_text") or "",
+                    "score":      round(float(p.get("normalized_score") or 0), 3),
+                    "hf_upvotes": int(p.get("hf_upvotes") or 0),
+                    "hn_points":  int(p.get("hn_points") or 0),
+                }
+                for p in papers
+            ],
+        }
+
+    digests = await _asyncio.gather(*[_make_digest(label, pe) for label, pe in eligible])
+    result = [d for d in digests if d.get("article")]
+
+    if result:
+        await cache_set(cache_key, result, ttl=21600)  # 6-hour cache
+
+    return result
+
+
 # ── Public Landing API ────────────────────────────────────────────────────────
 
 # All 10 topic definitions (icon, tagline, arXiv hints)
