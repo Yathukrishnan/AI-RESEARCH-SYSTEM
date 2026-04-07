@@ -23,33 +23,46 @@ OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 MODEL = "google/gemini-2.5-flash-lite"
 
 SYSTEM_PROMPT = (
-    "You are the autonomous Editor-in-Chief of a brutalist AI research aggregator. "
-    "Analyze the provided papers. Look for: "
-    "1) Cross-domain overlaps (e.g., Vision + Biotech). "
-    "2) Streaks by specific authors. "
-    "3) Papers with exceptional engagement across any platform. "
-    "Generate exactly 5 articles based on these clusters. "
-    "CONSTRAINT 1: The headline MUST be a punchy hook under 140 characters. "
-    "CONSTRAINT 2: Provide a 2-paragraph article_body explaining the connection. "
-    "Assign a realistic points value (10-500) based on importance. "
-    "CRITICAL: You MUST create at least ONE headline and article focused entirely on a specific "
-    "Author or Lab if they have published multiple papers or a highly influential paper in the "
-    "provided data. "
-    "You now have access to a rich set of engagement metrics for each paper (citations, "
-    "influential citations, citation velocity, GitHub stars, GitHub forks, star velocity, "
-    "HuggingFace upvotes, Hacker News points and comments, platform views/saves/clicks, "
-    "trending score, rising score, gem score) and author h-index (h_index_max). "
-    "You MUST weigh all of these signals holistically to determine what is truly a breakthrough. "
-    "When writing the Author Spotlight, you MUST reference their historical impact (h_index_max) "
-    "to justify why we are tracking them. "
-    "CRITICAL: The article_body MUST be written in Markdown. "
-    "ANTI-HALLUCINATION: You are strictly forbidden from writing URLs or Markdown links. "
-    "When you mention a paper in the article_body, you MUST refer to it using its exact tag "
-    "from the context data, formatted exactly like this: [P1] or [P2]. "
-    "Do NOT construct any URLs. Do NOT write [...](http...) links yourself. "
-    "Return ONLY a valid JSON array — no markdown wrapper, no code fences around the array. "
-    "Each element must have exactly these keys: "
-    "headline (string), article_body (string), points (integer), paper_ids (array of tags e.g. ['[P1]', '[P3]'])."
+    "You are the Chief Strategy Officer and Lead Intelligence Analyst for a Tier-1 Tech Publication. "
+    "Your audience consists of Managing Directors and VCs who demand strategic synthesis, not summaries. "
+
+    "THE CROSS-POLLINATION MANDATE (CRITICAL): "
+    "You are evaluating 150 research papers. You MUST NOT group identical papers together. "
+    "Your job is to find the 'Hidden Intersections'. You must club disparate domains "
+    "(e.g., Neuroscience + LLM routing, or Quantum Physics + NLP hardware) to reveal macro-trends. "
+    "If a report only discusses one narrow subfield, it is a failure. "
+
+    "NO HALLUCINATION MANDATE: "
+    "You must ground every strategic claim strictly in the data, abstracts, and author metrics "
+    "provided in the prompt. Do not invent capabilities, metrics, or future features that are not "
+    "explicitly supported by the batch data. "
+
+    "STRICT FORBIDDEN RULES (Zero-Tolerance): "
+    "1. NO PAPER TITLES: Never mention a paper title in the headline or narrative body. "
+    "2. NO CITATIONS/BRACKETS: Never use [p1], [25], or any citation markers. "
+    "3. NO LISTING: Do not write 'One study shows... another says...'. Write a unified editorial. "
+
+    "EDITORIAL STANDARDS: "
+    "- HEADLINES: Must reflect the intersection of fields (e.g., 'The Biological Pivot in Silicon Architecture'). "
+    "- EXECUTIVE TAKEAWAYS: 3 bullet points detailing the 'So What?' for the industry. "
+    "- 12-MONTH OUTLOOK: A bold prediction based on the data. "
+    "- NARRATIVE: 300-500 words of sophisticated prose. "
+
+    "ANTI-HALLUCINATION: Do NOT construct any URLs or Markdown links in any body field. "
+    "In the sources array ONLY, use the tag string (e.g. 'P3', no brackets) to identify papers. "
+    "Python will construct the real URLs from the tags after generation — do NOT write URLs yourself. "
+
+    "Return ONLY a valid JSON object with a single key 'reports' containing an array. "
+    "No markdown wrapper, no code fences. "
+    "Each report object MUST have exactly these keys: "
+    "headline (string, punchy trend hook — no paper titles, no author names, no brackets), "
+    "executive_takeaways (string, Markdown bullet list of exactly 3 points — no citations, no brackets), "
+    "twelve_month_outlook (string, 2-3 bold strategic sentences — no citations, no brackets), "
+    "narrative_body (string, 300-500 word Markdown deep-dive — no paper titles, no brackets, no links), "
+    "novelty_score (float 1.0-10.0), "
+    "sources (array of objects, each with: "
+    "  tag (string e.g. 'P3', NO brackets — just the number and letter), "
+    "  title (string, the full paper title from the context data))."
 )
 
 
@@ -64,8 +77,29 @@ class EditorAgent:
 
         llm_context — safe list sent to the LLM (no arXiv IDs).
         paper_map   — {"[P1]": {"id": "2501.12345", "title": "..."}, …}
+
+        Deduplication: cross-references all previously published sources_json so
+        the LLM never sees a paper it has already written about.
+        Discovery mix: fetches top-500 by engagement + RANDOM() then trims to 150
+        fresh papers, blending high-signal and long-tail picks.
         """
-        rows = await db.fetchall(
+        # 1. Collect every arXiv URL already published in autonomous_articles
+        memory_rows = await db.fetchall("SELECT sources_json FROM autonomous_articles")
+        published_urls: set[str] = set()
+        for row in memory_rows:
+            raw = row.get("sources_json")
+            if raw:
+                try:
+                    for src in json.loads(raw):
+                        url = src.get("url", "")
+                        if url:
+                            published_urls.add(url)
+                except Exception:
+                    pass
+        logger.info("EditorAgent: %d URLs already published", len(published_urls))
+
+        # 2. Fetch raw batch — top engagement mixed with random discovery
+        raw_rows = await db.fetchall(
             """
             SELECT
                 arxiv_id,
@@ -94,10 +128,7 @@ class EditorAgent:
                 current_score,
                 trend_label
             FROM papers
-            WHERE (
-                created_at > date('now', '-7 days')
-                OR github_stars > 100
-            )
+            WHERE created_at > date('now', '-60 days')
               AND is_deleted   = 0
               AND is_duplicate = 0
             ORDER BY (
@@ -106,15 +137,30 @@ class EditorAgent:
                 + COALESCE(hn_points, 0)
                 + COALESCE(citation_count, 0) * 10
                 + COALESCE(influential_citation_count, 0) * 50
-            ) DESC, created_at DESC
-            LIMIT 40
+                + COALESCE(h_index_max, 0) * 5
+            ) DESC, RANDOM()
+            LIMIT 500
             """,
+        )
+
+        # 3. Filter down to exactly 150 fresh, unseen papers
+        fresh_rows: list[dict] = []
+        for r in raw_rows:
+            arxiv_id = r.get("arxiv_id", "")
+            if f"https://arxiv.org/abs/{arxiv_id}" not in published_urls:
+                fresh_rows.append(r)
+            if len(fresh_rows) == 150:
+                break
+
+        logger.info(
+            "EditorAgent: %d fresh papers selected from %d candidates",
+            len(fresh_rows), len(raw_rows),
         )
 
         llm_context: list[dict[str, Any]] = []
         paper_map: dict[str, dict] = {}
 
-        for i, r in enumerate(rows, start=1):
+        for i, r in enumerate(fresh_rows, start=1):
             tag = f"[P{i}]"
 
             # Parse JSON columns safely
@@ -205,7 +251,7 @@ class EditorAgent:
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_message},
                     ],
-                    "max_tokens": 3000,
+                    "max_tokens": 8000,
                     "temperature": 0.1,
                 },
             )
@@ -220,11 +266,22 @@ class EditorAgent:
         raw = re.sub(r"\s*```$", "", raw, flags=re.MULTILINE)
         raw = raw.strip()
 
-        articles = json.loads(raw)
-        if not isinstance(articles, list):
-            raise ValueError("LLM did not return a JSON array")
+        parsed = json.loads(raw)
+        # Accept intelligence_reports, reports, or bare array
+        if isinstance(parsed, dict):
+            articles = (
+                parsed.get("intelligence_reports")
+                or parsed.get("reports")
+                or []
+            )
+        elif isinstance(parsed, list):
+            articles = parsed
+        else:
+            raise ValueError("LLM did not return a recognisable JSON structure")
+        if not articles:
+            raise ValueError("LLM returned an empty reports list")
 
-        logger.info("EditorAgent: LLM returned %d articles", len(articles))
+        logger.info("EditorAgent: LLM returned %d reports", len(articles))
         return articles
 
     # ── 3. Post-process: replace tags with real Markdown links ────────────────
@@ -280,32 +337,75 @@ class EditorAgent:
         saved = 0
         for art in articles:
             headline = str(art.get("headline", ""))[:140]
-            raw_body = str(art.get("article_body", ""))
 
-            # Replace [P1]-style tags with real arXiv Markdown links, then
-            # strip any hallucinated extra digits from URLs (e.g. 2604.011791 → 2604.01179)
-            article_body = self._fix_arxiv_urls(self._resolve_tags(raw_body, paper_map))
+            # narrative_body — editorial prose, no tags or links
+            article_body = str(art.get("narrative_body") or art.get("article_body", ""))
 
-            points = int(art.get("points", 50))
+            # new structured fields
+            executive_takeaways = str(art.get("executive_takeaways", ""))
+            twelve_month_outlook = str(art.get("twelve_month_outlook", ""))
 
-            # paper_ids may be tags ("[P1]") or real IDs; resolve to real IDs
-            raw_ids = art.get("paper_ids", [])
-            if not isinstance(raw_ids, list):
-                raw_ids = []
-            paper_ids = [
-                paper_map[pid]["id"] if pid in paper_map else pid
-                for pid in raw_ids
-            ]
-            cluster_count = len(paper_ids)
+            # strategic_outlook — fallback to twelve_month_outlook or legacy field
+            strategic_outlook = (
+                twelve_month_outlook
+                or str(art.get("strategic_outlook") or art.get("strategic_implications", ""))
+            )
+
+            # Resolve sources: [{tag, title}] → [{title, url}]
+            # The LLM provides the tag (e.g. "P3"); Python builds the arXiv URL.
+            raw_sources = art.get("sources", [])
+            if not isinstance(raw_sources, list):
+                raw_sources = []
+            resolved_sources = []
+            resolved_refs = []   # kept for cluster_count / paper_ids
+            for src in raw_sources:
+                if not isinstance(src, dict):
+                    continue
+                raw_tag = str(src.get("tag", "")).strip()
+                # Accept both "P3" and "[P3]" from the LLM
+                bracket_tag = raw_tag if raw_tag.startswith("[") else f"[{raw_tag}]"
+                meta = paper_map.get(bracket_tag, {})
+                arxiv_id = meta.get("id", "")
+                title = str(src.get("title", "") or meta.get("title", raw_tag))
+                resolved_sources.append({
+                    "title": title,
+                    "url": f"https://arxiv.org/abs/{arxiv_id}" if arxiv_id else "",
+                })
+                resolved_refs.append({"title": title, "id": arxiv_id})
+
+            key_authors = art.get("key_authors", [])
+            if not isinstance(key_authors, list):
+                key_authors = []
+
+            try:
+                novelty_score = float(art.get("novelty_score", 0.0))
+            except (TypeError, ValueError):
+                novelty_score = 0.0
+
+            try:
+                points = int(art.get("points", round(novelty_score * 50)))
+            except (TypeError, ValueError):
+                points = 0
+
+            cluster_count = len(resolved_refs)
+            paper_ids = [r["id"] for r in resolved_refs if r.get("id")]
 
             try:
                 await db.execute(
                     """
                     INSERT INTO autonomous_articles
-                        (headline, article_body, points, cluster_count, paper_ids)
-                    VALUES (?, ?, ?, ?, ?)
+                        (headline, article_body, points, cluster_count, paper_ids,
+                         key_authors, strategic_implications, novelty_score,
+                         strategic_outlook, references_json,
+                         executive_takeaways, twelve_month_outlook, sources_json)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    [headline, article_body, points, cluster_count, json.dumps(paper_ids)],
+                    [
+                        headline, article_body, points, cluster_count, json.dumps(paper_ids),
+                        json.dumps(key_authors), strategic_outlook, novelty_score,
+                        strategic_outlook, json.dumps(resolved_refs),
+                        executive_takeaways, twelve_month_outlook, json.dumps(resolved_sources),
+                    ],
                 )
                 saved += 1
             except Exception as e:

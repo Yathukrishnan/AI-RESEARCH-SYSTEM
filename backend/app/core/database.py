@@ -188,6 +188,9 @@ CREATE TABLE IF NOT EXISTS autonomous_articles (
     points INTEGER DEFAULT 0,
     cluster_count INTEGER DEFAULT 0,
     paper_ids TEXT DEFAULT '[]',
+    key_authors TEXT DEFAULT '[]',
+    strategic_implications TEXT,
+    novelty_score REAL DEFAULT 0.0,
     created_at TEXT DEFAULT (datetime('now'))
 )
 """
@@ -260,6 +263,15 @@ ENSURE_COLUMNS = [
     ("papers", "ai_why_important",   "TEXT",    "NULL"),
     ("papers", "ai_key_findings",    "TEXT",    "NULL"),
     ("papers", "ai_journalist_hook", "TEXT",    "NULL"),
+    # autonomous_articles migrations
+    ("autonomous_articles", "key_authors",            "TEXT", "'[]'"),
+    ("autonomous_articles", "strategic_implications", "TEXT", "NULL"),
+    ("autonomous_articles", "novelty_score",          "REAL", "0.0"),
+    ("autonomous_articles", "strategic_outlook",      "TEXT", "NULL"),
+    ("autonomous_articles", "references_json",        "TEXT", "'[]'"),
+    ("autonomous_articles", "executive_takeaways",    "TEXT", "NULL"),
+    ("autonomous_articles", "twelve_month_outlook",   "TEXT", "NULL"),
+    ("autonomous_articles", "sources_json",           "TEXT", "'[]'"),
 ]
 
 

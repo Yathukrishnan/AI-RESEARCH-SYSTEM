@@ -27,6 +27,14 @@ async def get_editor_feed(page: int = Query(default=1, ge=1)):
                 points,
                 cluster_count,
                 paper_ids,
+                key_authors,
+                strategic_implications,
+                strategic_outlook,
+                references_json,
+                executive_takeaways,
+                twelve_month_outlook,
+                sources_json,
+                novelty_score,
                 created_at
             FROM autonomous_articles
             ORDER BY created_at DESC
