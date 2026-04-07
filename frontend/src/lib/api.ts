@@ -46,6 +46,7 @@ api.interceptors.response.use(
 
 export const feedApi = {
   getFeed: (page = 0) => api.get(`/feed?page=${page}`),
+  getDigests: () => api.get('/feed/digests'),
   search: (q: string, page = 0) => api.get(`/search?q=${encodeURIComponent(q)}&page=${page}`),
   interact: (paperId: number, action: string) =>
     api.post(`/interact/${paperId}?action=${action}`),

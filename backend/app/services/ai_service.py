@@ -1072,6 +1072,70 @@ Output ONLY the 4 paragraphs of editorial text. Nothing else."""
 
         return ""
 
+    async def generate_feed_digest(
+        self,
+        topic_label: str,
+        topic_emoji: str,
+        papers: list,  # list of paper dicts with title + abstract/ai_summary
+    ) -> str:
+        """
+        Generate a 200-250 word journalist-style news article covering 4-5 papers
+        from the same topic area.  Written like a BBC/Reuters news piece —
+        no author names, no institution names, no paper IDs in the text.
+        The actual papers are shown separately as clickable sources.
+        """
+        if not self._api_key or not papers:
+            return ""
+
+        paper_blocks = "\n".join(
+            f"{i+1}. {p.get('title','')}: {(p.get('ai_summary') or p.get('abstract',''))[:200]}"
+            for i, p in enumerate(papers[:5])
+            if p.get("title")
+        )
+        if not paper_blocks.strip():
+            return ""
+
+        prompt = f"""You are a science journalist writing a short news brief for an AI research digest.
+
+TOPIC: {topic_label}
+PAPERS COVERED:
+{paper_blocks}
+
+Write a 200-250 word news article covering the key findings and trends across these papers. Follow these rules:
+
+- Write like a BBC or Reuters news brief — clear, factual, engaging
+- Do NOT mention any author names, institution names, or paper IDs
+- Do NOT use the phrase "researchers" as the subject of every sentence — vary the phrasing
+- Cover the main ideas and findings naturally in 3 short paragraphs
+- First paragraph: the headline finding or theme that unites these papers
+- Second paragraph: describe 2-3 specific findings or techniques in plain English
+- Third paragraph: why this matters — real-world impact or what comes next
+- No bullet points, no headers, no markdown
+- Total: 200-250 words exactly
+
+Output ONLY the article text. Nothing else."""
+
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.post(
+                    f"{self.base_url}/chat/completions",
+                    headers={"Authorization": f"Bearer {self._api_key}", "Content-Type": "application/json"},
+                    json={
+                        "model": self.model,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "max_tokens": 400,
+                        "temperature": 0.78,
+                    }
+                )
+                if resp.status_code == 200:
+                    text = resp.json()["choices"][0]["message"]["content"].strip()
+                    if text and len(text) > 100:
+                        return text
+        except Exception as e:
+            logger.warning(f"Feed digest error ({topic_label}): {e}")
+
+        return ""
+
     def _make_fallback_hook(self, title: str, abstract: str) -> str:
         """Short fallback hook from title (truncated to feel punchy)."""
         # Trim title to ~70 chars at a word boundary

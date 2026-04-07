@@ -4,6 +4,7 @@ import { ResumeReading } from '@/components/feed/ResumeReading'
 import { PaperCard } from '@/components/feed/PaperCard'
 import { Dashboard } from '@/components/dashboard/Dashboard'
 import { FeedBanner } from '@/components/alerts/FeedBanner'
+import { DigestFeed } from '@/components/feed/DigestFeed'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Database, Eye, Flame, Loader2, CheckCircle, Search, X, ArrowRight } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
@@ -303,6 +304,7 @@ export function HomePage() {
       <main className="max-w-7xl mx-auto px-4 py-8 space-y-5">
         {!isSearching && <CategoryAlerts />}
         {!isSearching && <ResumeReading />}
+        {!isSearching && <DigestFeed />}
 
         {isSearching ? (
           /* ── Search results ── */
