@@ -96,28 +96,37 @@ def normalize_batch(papers: list) -> list:
 
 
 def compute_trending_score(row: dict) -> float:
-    """Social velocity signal: HF upvotes + HN discussion + citation velocity."""
+    """Social velocity signal: dominant platform (HF/HN/GitHub) + 20% multi-platform bonus."""
     hf = _log_norm(float(row.get("hf_upvotes") or 0), 100)
     hn = _log_norm(
         float(row.get("hn_points") or 0) + float(row.get("hn_comments") or 0) * 0.5,
         200
     )
-    cit_vel = min(1.0, max(0.0, float(row.get("citation_velocity") or 0)))
+    git = _log_norm(float(row.get("github_stars") or 0), 1000)
     age = _age_days(row.get("published_at"))
     freshness = math.exp(-0.05 * max(0.0, age))  # decays over ~20 days
-    raw = 0.40 * hf + 0.30 * hn + 0.30 * cit_vel
+
+    dominant = max(hf, hn, git)
+    remaining = hf + hn + git - dominant  # sum of the other two signals
+    raw = dominant + 0.20 * remaining
     return round(min(1.0, raw * (1.0 + 0.5 * freshness)), 4)
 
 
 def compute_rising_score(row: dict) -> float:
-    """Momentum signal: citation velocity + HF growth + quality baseline."""
-    cit_vel = min(1.0, max(0.0, float(row.get("citation_velocity") or 0)))
+    """Momentum signal: dominant velocity (GitHub/HF/HN) + 20% multi-platform bonus + quality baseline."""
     star_vel = min(1.0, max(0.0, float(row.get("star_velocity") or 0)))
     hf = _log_norm(float(row.get("hf_upvotes") or 0), 100)
+    hn = _log_norm(
+        float(row.get("hn_points") or 0) + float(row.get("hn_comments") or 0) * 0.5,
+        200
+    )
     quality = float(row.get("normalized_score") or 0)
     age = _age_days(row.get("published_at"))
     decay = math.exp(-0.02 * max(0.0, age - 7))  # moderate decay after 1 week
-    raw = 0.40 * cit_vel + 0.25 * star_vel + 0.20 * hf + 0.15 * quality
+
+    dominant = max(star_vel, hf, hn)
+    remaining = star_vel + hf + hn - dominant  # sum of the other two signals
+    raw = dominant + 0.20 * remaining + 0.15 * quality
     return round(min(1.0, raw * decay), 4)
 
 
@@ -153,15 +162,16 @@ def compute_all_category_scores(row: dict) -> dict:
 
 def compute_blended_score(row: dict, weights: Optional[Dict] = None) -> tuple:
     """
-    Final paper score = base (70%) + social boost (30%).
+    Final paper score = base + additive social bonus.
 
-    Social boost is only applied when the paper has actual social signal data
-    (HF upvotes, HN activity, or citation velocity).  Papers with no social
-    data yet get the pure base score so early-life scoring is unaffected.
+    Social boost only adds to the base score — it never penalises papers
+    that lack engagement on any particular platform.  GitHub stars are
+    included as a trigger for the boost alongside HF, HN, and citation
+    velocity.
 
     Social boost formula:
-        social = 0.50 × trending_score + 0.30 × rising_score + 0.20 × platform_score
-        final  = 0.70 × base + 0.30 × social
+        social_boost = 0.50 × trending_score + 0.30 × rising_score + 0.20 × platform_score
+        blended      = base + 0.30 × social_boost
 
     gem_score is excluded from the blend — it is used only for trend-label
     assignment (Hidden Gem), not for ranking.
@@ -170,16 +180,17 @@ def compute_blended_score(row: dict, weights: Optional[Dict] = None) -> tuple:
     """
     base, score_type = compute_score(row, weights)
 
-    hf = float(row.get("hf_upvotes") or 0)
-    hn = float(row.get("hn_points") or 0) + float(row.get("hn_comments") or 0)
-    cv = float(row.get("citation_velocity") or 0)
+    hf  = float(row.get("hf_upvotes") or 0)
+    hn  = float(row.get("hn_points") or 0) + float(row.get("hn_comments") or 0)
+    cv  = float(row.get("citation_velocity") or 0)
+    git = float(row.get("github_stars") or 0)
 
-    if hf > 0 or hn > 0 or cv > 0:
+    if hf > 0 or hn > 0 or cv > 0 or git > 0:
         ts = compute_trending_score(row)
         rs = compute_rising_score(row)
         ps = compute_platform_score(row)
-        social = 0.50 * ts + 0.30 * rs + 0.20 * ps
-        blended = 0.70 * base + 0.30 * social
+        social_boost = 0.50 * ts + 0.30 * rs + 0.20 * ps
+        blended = base + 0.30 * social_boost
         return round(min(1.0, blended), 4), score_type
 
     return base, score_type

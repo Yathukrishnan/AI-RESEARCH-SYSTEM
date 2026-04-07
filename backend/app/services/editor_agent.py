@@ -80,8 +80,8 @@ class EditorAgent:
 
         Deduplication: cross-references all previously published sources_json so
         the LLM never sees a paper it has already written about.
-        Discovery mix: fetches top-500 by engagement + RANDOM() then trims to 150
-        fresh papers, blending high-signal and long-tail picks.
+        Diversity shuffle: fetches top-1000 by engagement, groups by primary subject,
+        then round-robins one paper per category to guarantee cross-domain breadth.
         """
         # 1. Collect every arXiv URL already published in autonomous_articles
         memory_rows = await db.fetchall("SELECT sources_json FROM autonomous_articles")
@@ -98,7 +98,7 @@ class EditorAgent:
                     pass
         logger.info("EditorAgent: %d URLs already published", len(published_urls))
 
-        # 2. Fetch raw batch — top engagement mixed with random discovery
+        # 2. Fetch massive pool — top engagement across the last 60 days
         raw_rows = await db.fetchall(
             """
             SELECT
@@ -138,24 +138,44 @@ class EditorAgent:
                 + COALESCE(citation_count, 0) * 10
                 + COALESCE(influential_citation_count, 0) * 50
                 + COALESCE(h_index_max, 0) * 5
-            ) DESC, RANDOM()
-            LIMIT 500
+            ) DESC
+            LIMIT 1000
             """,
         )
 
-        # 3. Filter down to exactly 150 fresh, unseen papers
-        fresh_rows: list[dict] = []
+        # 3. Diversity organizer — group unseen papers by primary subject
+        categorized_papers: dict[str, list[dict]] = {}
         for r in raw_rows:
             arxiv_id = r.get("arxiv_id", "")
-            if f"https://arxiv.org/abs/{arxiv_id}" not in published_urls:
-                fresh_rows.append(r)
-            if len(fresh_rows) == 150:
-                break
+            if f"https://arxiv.org/abs/{arxiv_id}" in published_urls:
+                continue
+            # Primary subject: prefer primary_category, fall back to ai_topic_category
+            subject = (
+                r.get("primary_category")
+                or r.get("ai_topic_category")
+                or "general"
+            ).split(".")[0].strip()  # e.g. "cs.LG" → "cs"
+            categorized_papers.setdefault(subject, []).append(r)
 
         logger.info(
-            "EditorAgent: %d fresh papers selected from %d candidates",
-            len(fresh_rows), len(raw_rows),
+            "EditorAgent: %d subjects found across %d fresh candidates",
+            len(categorized_papers), sum(len(v) for v in categorized_papers.values()),
         )
+
+        # 4. Round-robin dealer — one paper per category per round until 150
+        fresh_rows: list[dict] = []
+        while len(fresh_rows) < 150:
+            added_this_round = False
+            for subject in list(categorized_papers.keys()):
+                if categorized_papers[subject]:
+                    fresh_rows.append(categorized_papers[subject].pop(0))
+                    added_this_round = True
+                if len(fresh_rows) == 150:
+                    break
+            if not added_this_round:
+                break  # exhausted all valid papers before reaching 150
+
+        logger.info("EditorAgent: %d papers selected via diversity shuffle", len(fresh_rows))
 
         llm_context: list[dict[str, Any]] = []
         paper_map: dict[str, dict] = {}
