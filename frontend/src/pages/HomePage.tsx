@@ -6,10 +6,12 @@ import { Dashboard } from '@/components/dashboard/Dashboard'
 import { FeedBanner } from '@/components/alerts/FeedBanner'
 import { DigestFeed } from '@/components/feed/DigestFeed'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Database, Eye, Flame, Loader2, CheckCircle, Search, X, ArrowRight } from 'lucide-react'
+import { Loader2, CheckCircle, Search, X, ArrowRight } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { feedApi } from '@/lib/api'
 import { RippleButton } from '@/components/ui/MagicUI'
+import { Ripple } from '@/components/ui/ripple'
+import { AnimatedGradientText } from '@/components/ui/animated-gradient-text'
 
 const CATEGORIES = [
   {
@@ -179,15 +181,26 @@ export function HomePage() {
       <Navbar />
 
       {/* Hero — editorial header block */}
-      <div className="border-b border-white/7">
-        <div className="max-w-7xl mx-auto px-4 py-7 space-y-5">
+      <div className="border-b border-white/7 relative overflow-hidden">
+        {/* Magic UI Ripple — decorative concentric rings behind hero */}
+        <div className="absolute right-0 top-1/2 -translate-y-1/2 w-64 h-64 pointer-events-none opacity-60">
+          <Ripple mainCircleSize={60} mainCircleOpacity={0.18} numCircles={6} />
+        </div>
+        <div className="max-w-7xl mx-auto px-4 py-7 space-y-5 relative">
 
           {/* Title row */}
           <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-5">
             <motion.div initial={{ opacity: 0, x: -12 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.4 }}>
               <p className="text-[10px] font-mono text-muted/50 uppercase tracking-[0.15em] mb-2">{getGreeting()}, researcher</p>
               <h1 className="text-[26px] sm:text-[30px] font-black text-white leading-tight tracking-tight">
-                AI Research <span className="text-gradient">Intelligence</span>
+                AI Research{' '}
+                <AnimatedGradientText
+                  colorFrom="#e8a020"
+                  colorTo="#fbbf24"
+                  className="font-black text-[26px] sm:text-[30px] leading-tight"
+                >
+                  Intelligence
+                </AnimatedGradientText>
               </h1>
               <p className="text-[12px] font-mono text-muted/50 mt-1.5 uppercase tracking-widest">
                 Discover · Explore · Stay ahead

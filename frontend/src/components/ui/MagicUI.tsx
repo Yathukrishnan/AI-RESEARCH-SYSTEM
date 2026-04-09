@@ -158,7 +158,7 @@ export function RippleButton({
       {ripples.map(r => (
         <span
           key={r.id}
-          className="pointer-events-none absolute rounded-full animate-ripple"
+          className="pointer-events-none absolute rounded-full animate-click-ripple"
           style={{
             left: r.x - r.size / 2,
             top: r.y - r.size / 2,

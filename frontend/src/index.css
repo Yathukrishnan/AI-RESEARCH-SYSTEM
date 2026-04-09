@@ -30,69 +30,36 @@
     transition: background-color 0.18s ease, border-color 0.18s ease;
     position: relative;
   }
-  .paper-card:hover {
-    background-color: #1c1c1c;
-  }
+  .paper-card:hover { background-color: #1c1c1c; }
 
   .paper-card-trending { border-left-color: rgb(249 115 22) !important; }
   .paper-card-rising   { border-left-color: rgb(34 197 94) !important; }
   .paper-card-hidden   { border-left-color: rgb(168 85 247) !important; }
   .paper-card-missed   { border-left-color: rgb(251 191 36) !important; }
 
-  /* ── Trend Badges — flat text labels ── */
-  .badge-trending {
-    background: rgba(249,115,22,0.10);
-    color: #fb923c;
-    border: 1px solid rgba(249,115,22,0.22);
-  }
-  .badge-rising {
-    background: rgba(34,197,94,0.10);
-    color: #4ade80;
-    border: 1px solid rgba(34,197,94,0.22);
-  }
-  .badge-hidden {
-    background: rgba(168,85,247,0.10);
-    color: #c084fc;
-    border: 1px solid rgba(168,85,247,0.22);
-  }
-  .badge-missed {
-    background: rgba(251,191,36,0.08);
-    color: #fbbf24;
-    border: 1px solid rgba(251,191,36,0.22);
-  }
+  /* ── Trend Badges ── */
+  .badge-trending { background: rgba(249,115,22,0.10); color: #fb923c; border: 1px solid rgba(249,115,22,0.22); }
+  .badge-rising   { background: rgba(34,197,94,0.10);  color: #4ade80; border: 1px solid rgba(34,197,94,0.22); }
+  .badge-hidden   { background: rgba(168,85,247,0.10); color: #c084fc; border: 1px solid rgba(168,85,247,0.22); }
+  .badge-missed   { background: rgba(251,191,36,0.08); color: #fbbf24; border: 1px solid rgba(251,191,36,0.22); }
 
-  /* ── Score Bars — flat solid ── */
+  /* ── Score Bars ── */
   .score-bar        { border-radius: 1px; background: #e8a020; }
   .score-bar-orange { background: #f97316; }
   .score-bar-green  { background: #22c55e; }
   .score-bar-purple { background: #a855f7; }
   .score-bar-amber  { background: #f59e0b; }
 
-  /* ── Text gradients — amber ── */
-  .text-gradient {
-    background: linear-gradient(135deg, #e8a020 0%, #fbbf24 100%);
-    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
-  }
-  .text-gradient-orange {
-    background: linear-gradient(135deg, #f97316 0%, #fbbf24 100%);
-    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
-  }
-  .text-gradient-green {
-    background: linear-gradient(135deg, #22c55e 0%, #4ade80 100%);
-    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
-  }
-  .text-gradient-purple {
-    background: linear-gradient(135deg, #a855f7 0%, #c084fc 100%);
-    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
-  }
+  /* ── Text gradients ── */
+  .text-gradient        { background: linear-gradient(135deg, #e8a020 0%, #fbbf24 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+  .text-gradient-orange { background: linear-gradient(135deg, #f97316 0%, #fbbf24 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+  .text-gradient-green  { background: linear-gradient(135deg, #22c55e 0%, #4ade80 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+  .text-gradient-purple { background: linear-gradient(135deg, #a855f7 0%, #c084fc 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
 
-  /* ── Header — flat dark, no blur ── */
-  .glass {
-    background: #0a0a0a;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
-  }
+  /* ── Header ── */
+  .glass { background: #0a0a0a; border-bottom: 1px solid rgba(255,255,255,0.07); }
 
-  /* ── Section left-border colors ── */
+  /* ── Section borders ── */
   .section-border-trending { border-left: 3px solid #f97316; padding-left: 12px; }
   .section-border-rising   { border-left: 3px solid #22c55e; padding-left: 12px; }
   .section-border-hidden   { border-left: 3px solid #a855f7; padding-left: 12px; }
@@ -101,11 +68,7 @@
   .section-border-personal { border-left: 3px solid #e8a020; padding-left: 12px; }
 
   /* ── Suggestion block ── */
-  .suggestion-block {
-    background: rgba(232,160,32,0.04);
-    border: 1px solid rgba(232,160,32,0.12);
-    border-radius: 6px;
-  }
+  .suggestion-block { background: rgba(232,160,32,0.04); border: 1px solid rgba(232,160,32,0.12); border-radius: 6px; }
 
   /* ── Alert types ── */
   .alert-trending { background: rgba(249,115,22,0.07); border-color: rgba(249,115,22,0.2); }
@@ -118,58 +81,41 @@
   .nav-link.active { @apply text-white bg-accent/10 border-l-2 border-l-accent; }
 
   /* ── Live dot ── */
-  .live-dot {
-    width: 7px; height: 7px; border-radius: 50%;
-    background: #22c55e;
-    box-shadow: 0 0 0 0 rgba(34,197,94,0.5);
-    animation: live-pulse 1.8s ease-in-out infinite;
-  }
+  .live-dot { width: 7px; height: 7px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 0 0 rgba(34,197,94,0.5); animation: live-pulse 1.8s ease-in-out infinite; }
 }
 
 /* ── Keyframes ── */
-@keyframes shimmer {
-  0%   { background-position: -1000px 0; }
-  100% { background-position: 1000px 0; }
-}
-@keyframes slideUp {
-  0%   { transform: translateY(20px); opacity: 0; }
-  100% { transform: translateY(0); opacity: 1; }
-}
-@keyframes fadeIn {
-  0% { opacity: 0; } 100% { opacity: 1; }
-}
-@keyframes pulse-amber {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(232,160,32,0); }
-  50%       { box-shadow: 0 0 0 5px rgba(232,160,32,0.10); }
-}
-@keyframes float {
-  0%, 100% { transform: translateY(0px); }
-  50%       { transform: translateY(-4px); }
-}
-@keyframes glow-pulse {
-  0%, 100% { opacity: 0.5; }
-  50%       { opacity: 1; }
-}
-@keyframes slide-in-right {
-  0%   { transform: translateX(20px); opacity: 0; }
-  100% { transform: translateX(0); opacity: 1; }
-}
-@keyframes bounce-in {
-  0%   { transform: scale(0.85); opacity: 0; }
-  70%  { transform: scale(1.04); }
-  100% { transform: scale(1); opacity: 1; }
-}
-@keyframes live-pulse {
-  0%   { box-shadow: 0 0 0 0 rgba(34,197,94,0.5); }
-  70%  { box-shadow: 0 0 0 7px rgba(34,197,94,0); }
-  100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); }
-}
+@keyframes shimmer       { 0% { background-position: -1000px 0; } 100% { background-position: 1000px 0; } }
+@keyframes slideUp       { 0% { transform: translateY(20px); opacity: 0; } 100% { transform: translateY(0); opacity: 1; } }
+@keyframes fadeIn        { 0% { opacity: 0; } 100% { opacity: 1; } }
+@keyframes float         { 0%, 100% { transform: translateY(0px); } 50% { transform: translateY(-4px); } }
+@keyframes glow-pulse    { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
+@keyframes bounce-in     { 0% { transform: scale(0.85); opacity: 0; } 70% { transform: scale(1.04); } 100% { transform: scale(1); opacity: 1; } }
+@keyframes live-pulse    { 0% { box-shadow: 0 0 0 0 rgba(34,197,94,0.5); } 70% { box-shadow: 0 0 0 7px rgba(34,197,94,0); } 100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); } }
+@keyframes pulse-amber   { 0%, 100% { box-shadow: 0 0 0 0 rgba(232,160,32,0); } 50% { box-shadow: 0 0 0 5px rgba(232,160,32,0.10); } }
+@keyframes slide-in-right { 0% { transform: translateX(20px); opacity: 0; } 100% { transform: translateX(0); opacity: 1; } }
+
+/* ── Magic UI: Ripple (pulsing concentric circles) ── */
 @keyframes ripple {
+  0%, 100% { transform: translate(-50%, -50%) scale(1); }
+  50%       { transform: translate(-50%, -50%) scale(0.9); }
+}
+
+/* ── Click ripple (button press effect) ── */
+@keyframes click-ripple {
   0%   { transform: scale(0); opacity: 1; }
   100% { transform: scale(1); opacity: 0; }
 }
 
-.animate-float      { animation: float 3s ease-in-out infinite; }
-.animate-glow-pulse { animation: glow-pulse 2s ease-in-out infinite; }
-.animate-bounce-in  { animation: bounce-in 0.4s ease-out; }
-.animate-ripple     { animation: ripple 0.65s linear forwards; }
+/* ── Magic UI: Animated gradient text ── */
+@keyframes gradient-shift {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.animate-float        { animation: float 3s ease-in-out infinite; }
+.animate-glow-pulse   { animation: glow-pulse 2s ease-in-out infinite; }
+.animate-bounce-in    { animation: bounce-in 0.4s ease-out; }
+.animate-ripple       { animation: ripple var(--duration, 2s) ease calc(var(--i, 0) * 0.2s) infinite; }
+.animate-click-ripple { animation: click-ripple 0.65s linear forwards; }

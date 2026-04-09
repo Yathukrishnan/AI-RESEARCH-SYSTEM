@@ -9,7 +9,8 @@ import { TopicPage } from '@/pages/TopicPage'
 import { ReportPage } from '@/pages/ReportPage'
 import AutonomousFeed from '@/pages/AutonomousFeed'
 import { useAuthStore } from '@/stores/authStore'
-import { HexagonPattern } from '@/components/ui/MagicUI'
+import { AnimatedGridPattern } from '@/components/ui/animated-grid-pattern'
+import { cn } from '@/lib/utils'
 
 function RequireAdmin({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, role } = useAuthStore()
@@ -20,7 +21,17 @@ function RequireAdmin({ children }: { children: React.ReactNode }) {
 export default function App() {
   return (
     <>
-      <HexagonPattern />
+      <AnimatedGridPattern
+        numSquares={35}
+        maxOpacity={0.055}
+        duration={3.5}
+        repeatDelay={0.8}
+        className={cn(
+          'fixed inset-0 -z-10 h-full w-full',
+          'fill-amber-500/20 stroke-amber-500/8',
+          '[mask-image:radial-gradient(ellipse_80%_60%_at_50%_0%,white_30%,transparent_100%)]',
+        )}
+      />
     <Routes>
       {/* Public landing — non-technical users enter here */}
       <Route path="/" element={<LandingPage />} />
