@@ -181,10 +181,10 @@ export function HomePage() {
       <Navbar />
 
       {/* Hero — editorial header block */}
-      <div className="border-b border-white/7 relative overflow-hidden">
-        {/* Magic UI Ripple — decorative concentric rings behind hero */}
-        <div className="absolute right-0 top-1/2 -translate-y-1/2 w-64 h-64 pointer-events-none opacity-60">
-          <Ripple mainCircleSize={60} mainCircleOpacity={0.18} numCircles={6} />
+      <div className="border-b border-white/7 relative">
+        {/* Magic UI Ripple — concentric pulsing rings, right side */}
+        <div className="absolute right-16 top-1/2 -translate-y-1/2 w-[420px] h-[420px] pointer-events-none">
+          <Ripple mainCircleSize={80} mainCircleOpacity={0.3} numCircles={5} />
         </div>
         <div className="max-w-7xl mx-auto px-4 py-7 space-y-5 relative">
 
@@ -195,8 +195,9 @@ export function HomePage() {
               <h1 className="text-[26px] sm:text-[30px] font-black text-white leading-tight tracking-tight">
                 AI Research{' '}
                 <AnimatedGradientText
-                  colorFrom="#e8a020"
+                  colorFrom="#f97316"
                   colorTo="#fbbf24"
+                  speed={0.8}
                   className="font-black text-[26px] sm:text-[30px] leading-tight"
                 >
                   Intelligence

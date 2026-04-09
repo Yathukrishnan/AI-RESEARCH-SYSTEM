@@ -22,14 +22,13 @@ export default function App() {
   return (
     <>
       <AnimatedGridPattern
-        numSquares={35}
-        maxOpacity={0.055}
-        duration={3.5}
-        repeatDelay={0.8}
+        numSquares={40}
+        maxOpacity={0.18}
+        duration={3}
+        repeatDelay={0.6}
         className={cn(
           'fixed inset-0 -z-10 h-full w-full',
-          'fill-amber-500/20 stroke-amber-500/8',
-          '[mask-image:radial-gradient(ellipse_80%_60%_at_50%_0%,white_30%,transparent_100%)]',
+          'fill-amber-400/30 stroke-amber-400/20',
         )}
       />
     <Routes>
