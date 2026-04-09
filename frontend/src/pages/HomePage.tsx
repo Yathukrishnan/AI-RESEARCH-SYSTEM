@@ -9,6 +9,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Database, Eye, Flame, Loader2, CheckCircle, Search, X, ArrowRight } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { feedApi } from '@/lib/api'
+import { RippleButton } from '@/components/ui/MagicUI'
 
 const CATEGORIES = [
   {
@@ -55,14 +56,11 @@ function CategoryAlerts() {
       {/* Grid with hairline separators — editorial style */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-px bg-white/7 border border-white/7">
         {CATEGORIES.map((cat, i) => (
-          <motion.button
+          <RippleButton
             key={cat.type}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: i * 0.05 }}
-            whileHover={{ x: 3 }}
+            rippleColor="rgba(232,160,32,0.15)"
             onClick={() => navigate(`/papers/${cat.type}`)}
-            className="flex items-center gap-4 px-5 py-4 bg-surface hover:bg-surface-2 transition-colors text-left group"
+            className="flex items-center gap-4 px-5 py-4 bg-surface text-left group w-full"
           >
             <span className="text-xl shrink-0 select-none">{cat.emoji}</span>
             <div className="flex-1 min-w-0">
@@ -70,7 +68,7 @@ function CategoryAlerts() {
               <p className="text-[11px] text-muted/60 mt-1 line-clamp-1 leading-snug">{cat.hook}</p>
             </div>
             <ArrowRight size={12} className="text-muted/25 group-hover:text-muted/60 transition-colors shrink-0" />
-          </motion.button>
+          </RippleButton>
         ))}
       </div>
     </div>

@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { ChevronDown, ChevronUp, ExternalLink, Loader2, Newspaper } from 'lucide-react'
 import { feedApi } from '@/lib/api'
 import { useNavigate } from 'react-router-dom'
+import { Highlight } from '@/components/ui/MagicUI'
 
 interface DigestPaper {
   id: number
@@ -92,7 +93,7 @@ function DigestCard({ digest, index }: { digest: Digest; index: number }) {
                       </span>
                       <div className="min-w-0 flex-1">
                         <p className="text-[12px] font-semibold text-slate-200 group-hover:text-white transition-colors leading-snug line-clamp-2">
-                          {p.title}
+                          <Highlight delay={0.1 + i * 0.07}>{p.title}</Highlight>
                         </p>
                         {p.hook_text && (
                           <p className="text-[10px] font-mono text-muted/45 mt-0.5 leading-snug line-clamp-1">{p.hook_text}</p>

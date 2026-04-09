@@ -9,6 +9,7 @@ import { TopicPage } from '@/pages/TopicPage'
 import { ReportPage } from '@/pages/ReportPage'
 import AutonomousFeed from '@/pages/AutonomousFeed'
 import { useAuthStore } from '@/stores/authStore'
+import { HexagonPattern } from '@/components/ui/MagicUI'
 
 function RequireAdmin({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, role } = useAuthStore()
@@ -18,6 +19,8 @@ function RequireAdmin({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   return (
+    <>
+      <HexagonPattern />
     <Routes>
       {/* Public landing — non-technical users enter here */}
       <Route path="/" element={<LandingPage />} />
@@ -50,5 +53,6 @@ export default function App() {
         }
       />
     </Routes>
+    </>
   )
 }

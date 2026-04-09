@@ -9,6 +9,7 @@ import { PaperCard as PaperCardType, FeedSection } from '@/lib/types'
 import { timeAgo, truncate, isSaved, savePaper, unsavePaper, setLastRead } from '@/lib/utils'
 import { feedApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { RippleButton } from '@/components/ui/MagicUI'
 import toast from 'react-hot-toast'
 
 type SectionType = FeedSection['section_type']
@@ -220,53 +221,58 @@ export function PaperCard({ paper, index = 0, sectionType }: Props) {
         </span>
       </div>
 
-      {/* Row 6: Action bar — flat text links */}
+      {/* Row 6: Action bar — ripple buttons */}
       <div
         className="flex items-center gap-0 pt-2.5 border-t border-white/6"
         onClick={(e) => e.stopPropagation()}
       >
-        <button
+        <RippleButton
           onClick={handleView}
-          className="flex items-center gap-1 text-[12px] font-medium text-white/65 hover:text-accent transition-colors pr-3"
+          variant="amber"
+          rippleColor="rgba(232,160,32,0.4)"
+          className="flex items-center gap-1 text-[12px] font-medium px-3 py-1.5"
         >
           Details <ArrowRight size={11} />
-        </button>
+        </RippleButton>
 
         {paper.pdf_url && (
-          <button
+          <RippleButton
             onClick={handlePdf}
-            className="flex items-center gap-1 text-[12px] font-mono text-muted/50 hover:text-white transition-colors px-3 border-l border-white/8"
+            variant="ghost"
+            className="flex items-center gap-1 text-[12px] font-mono px-3 py-1.5 border-l border-r-0 border-t-0 border-b-0 border-white/8"
           >
             <Download size={10} /> PDF
-          </button>
+          </RippleButton>
         )}
 
-        <button
+        <RippleButton
           onClick={handleSimilar}
-          className="flex items-center gap-1 text-[12px] font-mono text-muted/50 hover:text-white transition-colors px-3 border-l border-white/8"
+          variant="ghost"
+          className="flex items-center gap-1 text-[12px] font-mono px-3 py-1.5 border-l border-r-0 border-t-0 border-b-0 border-white/8"
         >
           <Layers size={10} /> Similar
-        </button>
+        </RippleButton>
 
         {paper.github_url && (
-          <button
+          <RippleButton
             onClick={(e) => { e.stopPropagation(); window.open(paper.github_url!, '_blank') }}
-            className="text-muted/40 hover:text-white transition-colors px-3 border-l border-white/8"
+            variant="ghost"
+            className="px-3 py-1.5 border-l border-r-0 border-t-0 border-b-0 border-white/8"
           >
             <Github size={11} />
-          </button>
+          </RippleButton>
         )}
 
         <div className="flex items-center gap-3 ml-auto">
           <button
             onClick={handleLike}
-            className={cn('transition-colors', liked ? 'text-rose-400' : 'text-muted/35 hover:text-rose-400')}
+            className={cn('transition-colors p-1', liked ? 'text-rose-400' : 'text-muted/35 hover:text-rose-400')}
           >
             <Heart size={12} className={liked ? 'fill-rose-400' : ''} />
           </button>
           <button
             onClick={handleSave}
-            className={cn('transition-colors', saved ? 'text-amber-400' : 'text-muted/35 hover:text-amber-400')}
+            className={cn('transition-colors p-1', saved ? 'text-amber-400' : 'text-muted/35 hover:text-amber-400')}
           >
             {saved ? <BookmarkCheck size={12} /> : <Bookmark size={12} />}
           </button>
