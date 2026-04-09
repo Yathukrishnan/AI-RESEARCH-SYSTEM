@@ -12,6 +12,8 @@ import { feedApi } from '@/lib/api'
 import { RippleButton } from '@/components/ui/MagicUI'
 import { Ripple } from '@/components/ui/ripple'
 import { AnimatedGradientText } from '@/components/ui/animated-gradient-text'
+import { AnimatedGridPattern } from '@/components/ui/animated-grid-pattern'
+import { cn } from '@/lib/utils'
 
 const CATEGORIES = [
   {
@@ -177,14 +179,29 @@ export function HomePage() {
   const isAnalyzing = stats && !stats.analysis_complete
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background relative">
+
+      {/* ── Magic UI: Animated Grid Pattern background ── */}
+      <AnimatedGridPattern
+        numSquares={40}
+        maxOpacity={0.22}
+        duration={3}
+        repeatDelay={0.5}
+        className={cn(
+          'absolute inset-0 z-0 h-full w-full',
+          'fill-amber-400/35 stroke-amber-400/20',
+        )}
+      />
+
+      {/* All page content sits above the grid */}
+      <div className="relative z-10">
       <Navbar />
 
       {/* Hero — editorial header block */}
-      <div className="border-b border-white/7 relative">
-        {/* Magic UI Ripple — concentric pulsing rings, right side */}
-        <div className="absolute right-16 top-1/2 -translate-y-1/2 w-[420px] h-[420px] pointer-events-none">
-          <Ripple mainCircleSize={80} mainCircleOpacity={0.3} numCircles={5} />
+      <div className="border-b border-white/7 relative overflow-visible">
+        {/* Magic UI Ripple — concentric pulsing amber rings */}
+        <div className="absolute right-0 top-1/2 -translate-y-1/2 w-[500px] h-[500px] pointer-events-none hidden lg:block">
+          <Ripple mainCircleSize={90} mainCircleOpacity={0.35} numCircles={5} />
         </div>
         <div className="max-w-7xl mx-auto px-4 py-7 space-y-5 relative">
 
@@ -355,6 +372,7 @@ export function HomePage() {
           <Dashboard />
         )}
       </main>
+      </div>{/* end z-10 wrapper */}
     </div>
   )
 }

@@ -9,8 +9,6 @@ import { TopicPage } from '@/pages/TopicPage'
 import { ReportPage } from '@/pages/ReportPage'
 import AutonomousFeed from '@/pages/AutonomousFeed'
 import { useAuthStore } from '@/stores/authStore'
-import { AnimatedGridPattern } from '@/components/ui/animated-grid-pattern'
-import { cn } from '@/lib/utils'
 
 function RequireAdmin({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, role } = useAuthStore()
@@ -21,16 +19,6 @@ function RequireAdmin({ children }: { children: React.ReactNode }) {
 export default function App() {
   return (
     <>
-      <AnimatedGridPattern
-        numSquares={40}
-        maxOpacity={0.18}
-        duration={3}
-        repeatDelay={0.6}
-        className={cn(
-          'fixed inset-0 -z-10 h-full w-full',
-          'fill-amber-400/30 stroke-amber-400/20',
-        )}
-      />
     <Routes>
       {/* Public landing — non-technical users enter here */}
       <Route path="/" element={<LandingPage />} />
