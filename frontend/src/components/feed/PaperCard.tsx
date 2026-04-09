@@ -2,57 +2,38 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
-  Github, Bookmark, BookmarkCheck, Eye, Download,
-  Users, Star, Quote, Layers, ArrowRight, Heart
+  Github, Bookmark, BookmarkCheck, Eye,
+  Download, Users, Star, Quote, Layers, ArrowRight, Heart
 } from 'lucide-react'
 import { PaperCard as PaperCardType, FeedSection } from '@/lib/types'
-import { TrendBadge } from '@/components/ui/TrendBadge'
-import { getCategoryStyle, timeAgo, truncate, isSaved, savePaper, unsavePaper, setLastRead, getScoreColor } from '@/lib/utils'
+import { timeAgo, truncate, isSaved, savePaper, unsavePaper, setLastRead } from '@/lib/utils'
 import { feedApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import toast from 'react-hot-toast'
 
 type SectionType = FeedSection['section_type']
 
-function cardClass(sectionType?: SectionType) {
+function leftBorder(sectionType?: SectionType) {
   switch (sectionType) {
-    case 'trending':    return 'paper-card-trending border-l-2 border-l-orange-500/60'
-    case 'rising':      return 'paper-card-rising border-l-2 border-l-green-500/60'
-    case 'hidden_gems': return 'paper-card-hidden border-l-2 border-l-purple-500/60'
-    case 'you_missed':  return 'paper-card-missed border-l-2 border-l-amber-500/60'
-    default:            return ''
+    case 'trending':    return 'border-l-orange-500'
+    case 'rising':      return 'border-l-green-500'
+    case 'hidden_gems': return 'border-l-purple-500'
+    case 'you_missed':  return 'border-l-amber-400'
+    default:            return 'border-l-white/15'
   }
 }
 
-function ScoreSegments({ score, sectionType }: { score: number; sectionType?: SectionType }) {
-  const pct = Math.min(100, Math.round(score * 100))
-  const filled = Math.round(pct / 10)
-  const segmentColor = () => {
-    switch (sectionType) {
-      case 'trending':    return 'bg-orange-400'
-      case 'rising':      return 'bg-green-400'
-      case 'hidden_gems': return 'bg-purple-400'
-      case 'you_missed':  return 'bg-amber-400'
-      default: {
-        if (pct >= 70) return 'bg-emerald-400'
-        if (pct >= 40) return 'bg-yellow-400'
-        return 'bg-accent/70'
-      }
-    }
-  }
-  return (
-    <div className="flex items-center gap-0.5">
-      {Array.from({ length: 10 }).map((_, i) => (
-        <div
-          key={i}
-          className={cn('h-1 flex-1 rounded-full transition-all duration-700', i < filled ? segmentColor() : 'bg-surface-3')}
-        />
-      ))}
-      <span className={cn('text-xs font-mono font-bold ml-1.5 shrink-0', getScoreColor(score))}>
-        {pct}%
-      </span>
-    </div>
-  )
+function trendLabelStyle(label: string) {
+  if (label.includes('Trending')) return 'text-orange-400'
+  if (label.includes('Rising'))   return 'text-green-400'
+  if (label.includes('Hidden'))   return 'text-purple-400'
+  return 'text-amber-400'
+}
+
+function scoreColor(pct: number) {
+  if (pct >= 75) return 'text-amber-400'
+  if (pct >= 50) return 'text-white/80'
+  return 'text-muted'
 }
 
 interface Props {
@@ -63,10 +44,15 @@ interface Props {
 
 export function PaperCard({ paper, index = 0, sectionType }: Props) {
   const navigate = useNavigate()
-  const [saved, setSaved] = useState(isSaved(paper.id))
-  const [views, setViews] = useState(paper.view_count)
-  const [liked, setLiked] = useState(false)
+  const [saved, setSaved]       = useState(isSaved(paper.id))
+  const [views, setViews]       = useState(paper.view_count)
+  const [liked, setLiked]       = useState(false)
   const [likeCount, setLikeCount] = useState(paper.save_count ?? 0)
+
+  const pct    = Math.min(100, Math.round(paper.normalized_score * 100))
+  const isNew  = paper.published_at
+    ? (Date.now() - new Date(paper.published_at).getTime()) < 3 * 24 * 3600 * 1000
+    : false
 
   const handleView = () => {
     feedApi.interact(paper.id, 'view').catch(() => {})
@@ -111,190 +97,180 @@ export function PaperCard({ paper, index = 0, sectionType }: Props) {
     navigate(`/paper/${paper.id}#similar`)
   }
 
-  const isNew = paper.published_at
-    ? (Date.now() - new Date(paper.published_at).getTime()) < 3 * 24 * 3600 * 1000
-    : false
-
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
+      initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: Math.min(index * 0.04, 0.36), duration: 0.4 }}
+      transition={{ delay: Math.min(index * 0.04, 0.32), duration: 0.35 }}
       className={cn(
-        'paper-card bg-surface border border-accent/15 rounded-2xl p-5 flex flex-col gap-3 cursor-pointer group',
-        cardClass(sectionType)
+        'paper-card bg-surface border border-white/8 border-l-[3px] p-5 flex flex-col gap-3 cursor-pointer group',
+        leftBorder(sectionType)
       )}
       onClick={handleView}
     >
-      {/* Row 1: categories + badges */}
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex flex-wrap gap-1.5 flex-1 min-w-0">
-          {paper.categories.slice(0, 2).map((cat) => (
-            <span key={cat} className={cn('text-xs px-2 py-0.5 rounded-full border font-medium shrink-0', getCategoryStyle(cat))}>
-              {cat}
-            </span>
-          ))}
+      {/* Row 1: categories + score */}
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
+          <span className="text-[10px] font-mono text-muted/70 uppercase tracking-wider leading-none">
+            {paper.categories.slice(0, 2).join(' · ')}
+          </span>
           {isNew && (
-            <span className="text-xs px-2 py-0.5 rounded-full bg-cyan-500/12 text-cyan-300 border border-cyan-500/25 font-medium shrink-0 animate-bounce-in">
+            <span className="text-[10px] font-mono font-bold text-amber-400 uppercase tracking-wider">
               ✦ New
             </span>
           )}
-          {(paper as any).hook_text && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-accent/10 text-accent-2/60 border border-accent/15 font-mono shrink-0">
+          {paper.trend_label && (
+            <span className={cn('text-[10px] font-mono font-bold uppercase tracking-wider', trendLabelStyle(paper.trend_label))}>
+              {paper.trend_label}
+            </span>
+          )}
+          {(paper as any).hook_text && !paper.trend_label && (
+            <span className="text-[10px] font-mono text-accent/50 uppercase tracking-wider">
               AI Pick
             </span>
           )}
         </div>
-        {paper.trend_label && (
-          <div className="shrink-0">
-            <TrendBadge label={paper.trend_label} />
+        {/* Score — large editorial number */}
+        <div className="text-right shrink-0">
+          <div className={cn('text-[22px] font-black leading-none tabular-nums font-mono', scoreColor(pct))}>
+            {pct}
           </div>
-        )}
+          <div className="text-[9px] font-mono text-muted/50 uppercase tracking-[0.12em] mt-0.5">score</div>
+        </div>
       </div>
 
-      {/* Row 2: Hook headline (YouTube-style) */}
+      {/* Row 2: Hook / title */}
       <div className="flex-1">
         {(paper as any).hook_text ? (
-          <div className="flex flex-col gap-1.5">
-            <p className="text-[15px] font-bold text-white leading-snug line-clamp-2 group-hover:text-accent-2 transition-colors tracking-tight">
+          <>
+            <p className="text-[15px] font-bold text-white leading-snug line-clamp-2 group-hover:text-amber-50 transition-colors tracking-tight">
               {(paper as any).hook_text}
             </p>
-            <p className="text-[10px] text-slate-600 font-mono line-clamp-1 leading-tight">
-              ↳ {truncate(paper.title, 85)}
+            <p className="text-[10px] text-muted/45 font-mono mt-1.5 line-clamp-1 leading-tight">
+              ↳ {truncate(paper.title, 90)}
             </p>
-          </div>
+          </>
         ) : paper.ai_summary ? (
-          <div className="flex flex-col gap-1.5">
-            <p className="text-[15px] font-bold text-white leading-snug line-clamp-2 group-hover:text-accent-2 transition-colors tracking-tight">
+          <>
+            <p className="text-[15px] font-bold text-white leading-snug line-clamp-2 group-hover:text-amber-50 transition-colors tracking-tight">
               {truncate(paper.ai_summary, 160)}
             </p>
-            <p className="text-[10px] text-slate-600 font-mono line-clamp-1 leading-tight">
-              ↳ {truncate(paper.title, 85)}
+            <p className="text-[10px] text-muted/45 font-mono mt-1.5 line-clamp-1 leading-tight">
+              ↳ {truncate(paper.title, 90)}
             </p>
-          </div>
+          </>
         ) : (
-          <div className="flex flex-col gap-1.5">
-            <h3 className="text-[15px] font-bold text-white leading-snug line-clamp-2 group-hover:text-accent-2 transition-colors tracking-tight">
+          <>
+            <h3 className="text-[15px] font-bold text-white leading-snug line-clamp-2 group-hover:text-amber-50 transition-colors tracking-tight">
               {paper.title}
             </h3>
             {paper.abstract && (
-              <p className="text-xs text-slate-500 leading-relaxed line-clamp-2">
+              <p className="text-[11px] text-muted/60 leading-relaxed line-clamp-2 mt-1">
                 {truncate(paper.abstract, 130)}
               </p>
             )}
-          </div>
+          </>
         )}
       </div>
 
-      {/* Row 4: Topic tags */}
+      {/* Row 3: Topic tags — monospace, no backgrounds */}
       {paper.ai_topic_tags.length > 0 && (
-        <div className="flex flex-wrap gap-1">
+        <div className="flex flex-wrap gap-x-3 gap-y-0.5">
           {paper.ai_topic_tags.slice(0, 4).map((tag) => (
-            <span
-              key={tag}
-              className="text-xs px-2 py-0.5 bg-accent/8 text-accent-2/75 rounded-md border border-accent/15 hover:bg-accent/15 hover:text-accent-2 transition-colors"
-            >
+            <span key={tag} className="text-[10px] font-mono text-accent/45 hover:text-accent/70 transition-colors">
               #{tag}
             </span>
           ))}
           {paper.ai_topic_tags.length > 4 && (
-            <span className="text-xs text-muted/60 self-center">+{paper.ai_topic_tags.length - 4}</span>
+            <span className="text-[10px] font-mono text-muted/40">+{paper.ai_topic_tags.length - 4}</span>
           )}
         </div>
       )}
 
-      {/* Row 5: Score segments */}
-      <ScoreSegments score={paper.normalized_score} sectionType={sectionType} />
-
-      {/* Row 6: Engagement stats */}
-      <div className="flex items-center gap-3 text-xs text-muted">
+      {/* Row 4: Engagement stats — monospace */}
+      <div className="flex items-center gap-3 text-[11px] font-mono text-muted/60">
         <span className="flex items-center gap-1">
-          <Eye size={11} /> {views.toLocaleString()}
+          <Eye size={10} /> {views.toLocaleString()}
         </span>
         {paper.citation_count > 0 && (
           <span className="flex items-center gap-1">
-            <Quote size={11} /> {paper.citation_count}
+            <Quote size={10} /> {paper.citation_count}
           </span>
         )}
         {paper.github_stars > 0 && (
-          <span className="flex items-center gap-1 text-yellow-500/70">
-            <Star size={11} />
+          <span className="flex items-center gap-1 text-yellow-500/55">
+            <Star size={10} />
             {paper.github_stars >= 1000 ? `${(paper.github_stars / 1000).toFixed(1)}k` : paper.github_stars}
           </span>
         )}
         {likeCount > 0 && (
-          <span className={cn('flex items-center gap-1', liked && 'text-pink-400')}>
-            <Heart size={11} className={liked ? 'fill-pink-400' : ''} /> {likeCount}
+          <span className={cn('flex items-center gap-1', liked ? 'text-rose-400' : '')}>
+            <Heart size={10} className={liked ? 'fill-rose-400' : ''} /> {likeCount}
           </span>
         )}
-        <span className="ml-auto shrink-0">{timeAgo(paper.published_at)}</span>
+        <span className="ml-auto text-muted/40">{timeAgo(paper.published_at)}</span>
       </div>
 
-      {/* Row 7: Authors */}
-      <div className="flex items-center gap-1.5 text-xs text-muted/60">
-        <Users size={10} className="shrink-0" />
+      {/* Row 5: Authors — small caps */}
+      <div className="flex items-center gap-1.5 text-[10px] font-mono text-muted/35 uppercase tracking-wide truncate">
+        <Users size={9} className="shrink-0 opacity-60" />
         <span className="truncate">
-          {paper.authors.slice(0, 2).map((a) => a.name).join(', ')}
-          {paper.authors.length > 2 && <span> +{paper.authors.length - 2}</span>}
+          {paper.authors.slice(0, 3).map((a) => a.name).join(' · ')}
+          {paper.authors.length > 3 && <span> +{paper.authors.length - 3}</span>}
         </span>
       </div>
 
-      {/* Row 8: Action buttons */}
+      {/* Row 6: Action bar — flat text links */}
       <div
-        className="flex items-center gap-1.5 pt-2 border-t border-accent/10"
+        className="flex items-center gap-0 pt-2.5 border-t border-white/6"
         onClick={(e) => e.stopPropagation()}
       >
         <button
           onClick={handleView}
-          className="flex items-center gap-1 px-2.5 py-1.5 bg-accent/10 hover:bg-accent/20 border border-accent/20 hover:border-accent/40 text-accent-2 text-xs font-medium rounded-lg transition-all"
+          className="flex items-center gap-1 text-[12px] font-medium text-white/65 hover:text-accent transition-colors pr-3"
         >
-          <ArrowRight size={11} /> Details
+          Details <ArrowRight size={11} />
         </button>
 
         {paper.pdf_url && (
           <button
             onClick={handlePdf}
-            className="flex items-center gap-1 px-2.5 py-1.5 bg-cyan-500/8 hover:bg-cyan-500/15 border border-cyan-500/20 text-cyan-300 text-xs font-medium rounded-lg transition-all"
+            className="flex items-center gap-1 text-[12px] font-mono text-muted/50 hover:text-white transition-colors px-3 border-l border-white/8"
           >
-            <Download size={11} /> PDF
+            <Download size={10} /> PDF
           </button>
         )}
 
         <button
           onClick={handleSimilar}
-          className="flex items-center gap-1 px-2.5 py-1.5 bg-surface-2 hover:bg-surface-3 border border-accent/10 text-muted hover:text-white text-xs rounded-lg transition-all"
+          className="flex items-center gap-1 text-[12px] font-mono text-muted/50 hover:text-white transition-colors px-3 border-l border-white/8"
         >
-          <Layers size={11} /> Similar
+          <Layers size={10} /> Similar
         </button>
 
         {paper.github_url && (
           <button
             onClick={(e) => { e.stopPropagation(); window.open(paper.github_url!, '_blank') }}
-            className="p-1.5 bg-surface-2 hover:bg-surface-3 border border-accent/10 text-muted hover:text-white rounded-lg transition-all"
+            className="text-muted/40 hover:text-white transition-colors px-3 border-l border-white/8"
           >
             <Github size={11} />
           </button>
         )}
 
-        <button
-          onClick={handleLike}
-          className={cn(
-            'p-1.5 border rounded-lg transition-all',
-            liked ? 'bg-pink-500/10 border-pink-500/30 text-pink-400' : 'bg-surface-2 border-accent/10 text-muted hover:text-pink-400 hover:border-pink-500/20'
-          )}
-        >
-          <Heart size={11} className={liked ? 'fill-pink-400' : ''} />
-        </button>
-
-        <button
-          onClick={handleSave}
-          className={cn(
-            'p-1.5 border rounded-lg transition-all ml-auto',
-            saved ? 'bg-warning/10 border-warning/30 text-yellow-400' : 'bg-surface-2 border-accent/10 text-muted hover:text-yellow-400 hover:border-warning/20'
-          )}
-        >
-          {saved ? <BookmarkCheck size={11} /> : <Bookmark size={11} />}
-        </button>
+        <div className="flex items-center gap-3 ml-auto">
+          <button
+            onClick={handleLike}
+            className={cn('transition-colors', liked ? 'text-rose-400' : 'text-muted/35 hover:text-rose-400')}
+          >
+            <Heart size={12} className={liked ? 'fill-rose-400' : ''} />
+          </button>
+          <button
+            onClick={handleSave}
+            className={cn('transition-colors', saved ? 'text-amber-400' : 'text-muted/35 hover:text-amber-400')}
+          >
+            {saved ? <BookmarkCheck size={12} /> : <Bookmark size={12} />}
+          </button>
+        </div>
       </div>
     </motion.div>
   )

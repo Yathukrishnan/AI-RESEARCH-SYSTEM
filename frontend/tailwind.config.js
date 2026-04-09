@@ -4,25 +4,28 @@ export default {
   theme: {
     extend: {
       colors: {
-        background: '#000319',
-        surface: '#050d2e',
-        'surface-2': '#0a1545',
-        'surface-3': '#0f1e5c',
-        accent: '#6366f1',
-        'accent-2': '#818cf8',
-        highlight: '#22d3ee',
-        success: '#10b981',
+        background: '#0a0a0a',
+        surface: '#131313',
+        'surface-2': '#1c1c1c',
+        'surface-3': '#242424',
+        accent: '#e8a020',
+        'accent-2': '#fbbf24',
+        highlight: '#fbbf24',
+        success: '#22c55e',
         warning: '#f59e0b',
         danger: '#ef4444',
-        muted: '#64748b',
+        muted: '#6b7280',
       },
       backgroundImage: {
-        'card-gradient': 'linear-gradient(135deg, rgba(99,102,241,0.05) 0%, rgba(14,165,233,0.05) 100%)',
+        'card-gradient': 'linear-gradient(135deg, rgba(232,160,32,0.04) 0%, rgba(251,191,36,0.02) 100%)',
       },
       boxShadow: {
-        'glow': '0 0 20px rgba(99, 102, 241, 0.4)',
-        'card': '0 4px 24px rgba(0, 0, 0, 0.4)',
-        'card-hover': '0 8px 40px rgba(99, 102, 241, 0.25)',
+        'glow': '0 0 20px rgba(232, 160, 32, 0.3)',
+        'card': '0 4px 24px rgba(0, 0, 0, 0.5)',
+        'card-hover': '0 4px 12px rgba(232, 160, 32, 0.12)',
+      },
+      fontFamily: {
+        mono: ['JetBrains Mono', 'Fira Code', 'Cascadia Code', 'monospace'],
       },
       animation: {
         'shimmer': 'shimmer 2s linear infinite',

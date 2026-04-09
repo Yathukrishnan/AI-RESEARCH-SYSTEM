@@ -18,11 +18,11 @@ function buildItems(papers: DailyHook[]): PaperItem[] {
 }
 
 function paperStyle(label: string) {
-  if (label.includes('Trending') || label.includes('🔥')) return 'border-orange-500/30 bg-orange-500/5'
-  if (label.includes('Gems') || label.includes('💎'))    return 'border-purple-500/30 bg-purple-500/5'
-  if (label.includes('Added') || label.includes('✨'))   return 'border-cyan-500/30 bg-cyan-500/5'
-  if (label.includes('Rising') || label.includes('📈'))  return 'border-green-500/30 bg-green-500/5'
-  return 'border-accent/25 bg-accent/5'
+  if (label.includes('Trending') || label.includes('🔥')) return 'border-orange-500/20 border-l-orange-500'
+  if (label.includes('Gems') || label.includes('💎'))    return 'border-purple-500/20 border-l-purple-500'
+  if (label.includes('Added') || label.includes('✨'))   return 'border-amber-500/20 border-l-amber-500'
+  if (label.includes('Rising') || label.includes('📈'))  return 'border-green-500/20 border-l-green-500'
+  return 'border-white/10 border-l-accent/60'
 }
 
 export function FeedBanner() {
@@ -94,7 +94,7 @@ export function FeedBanner() {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.2 }}
       onClick={handleClick}
-      className={`w-full rounded-xl px-4 py-3 border flex items-center gap-3 cursor-pointer group ${style}`}
+      className={`w-full px-4 py-3 bg-surface border border-l-[3px] flex items-center gap-3 cursor-pointer group ${style}`}
     >
       {/* Emoji */}
       <span className="text-xl shrink-0 select-none">{emoji}</span>
