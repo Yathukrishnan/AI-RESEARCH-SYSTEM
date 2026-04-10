@@ -142,6 +142,15 @@ def compute_gem_score(row: dict) -> float:
     return round(min(1.0, quality * quality * (1.0 - attention * 0.8)), 4)
 
 
+def _platform_diversity_bonus(row: dict) -> float:
+    """Additive bonus for cross-platform presence (+0.05 per platform, capped at +0.15)."""
+    raw = row.get("signal_platforms") or ""
+    if not raw or not raw.strip():
+        return 0.0
+    platforms = {p.strip().lower() for p in raw.split(",") if p.strip()}
+    return min(0.15, len(platforms) * 0.05)
+
+
 def compute_platform_score(row: dict) -> float:
     """In-app engagement: views, saves, clicks."""
     views = _log_norm(float(row.get("view_count") or 0), 500)
@@ -170,7 +179,9 @@ def compute_blended_score(row: dict, weights: Optional[Dict] = None) -> tuple:
     velocity.
 
     Social boost formula:
+        platform_diversity_bonus = min(0.15, unique_platform_count × 0.05)
         social_boost = 0.50 × trending_score + 0.30 × rising_score + 0.20 × platform_score
+                       + platform_diversity_bonus
         blended      = base + 0.30 × social_boost
 
     gem_score is excluded from the blend — it is used only for trend-label
@@ -189,7 +200,8 @@ def compute_blended_score(row: dict, weights: Optional[Dict] = None) -> tuple:
         ts = compute_trending_score(row)
         rs = compute_rising_score(row)
         ps = compute_platform_score(row)
-        social_boost = 0.50 * ts + 0.30 * rs + 0.20 * ps
+        diversity_bonus = _platform_diversity_bonus(row)
+        social_boost = 0.50 * ts + 0.30 * rs + 0.20 * ps + diversity_bonus
         blended = base + 0.30 * social_boost
         return round(min(1.0, blended), 4), score_type
 

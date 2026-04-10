@@ -128,7 +128,7 @@ class EditorAgent:
                 current_score,
                 trend_label
             FROM papers
-            WHERE created_at > date('now', '-60 days')
+            WHERE published_at >= '2025-10-01'
               AND is_deleted   = 0
               AND is_duplicate = 0
             ORDER BY (
@@ -341,6 +341,29 @@ class EditorAgent:
             logger.warning("EditorAgent: no papers found, aborting")
             return 0
 
+        # Extract the 150 arXiv IDs sent to the LLM for context traceability
+        selected_arxiv_ids = [meta["id"] for meta in paper_map.values() if meta.get("id")]
+        run_timestamp = datetime.now(timezone.utc).isoformat()
+
+        # Record this editor run before calling the LLM
+        # Turso Hrana returns last_insert_rowid in the execute result dict directly
+        run_result = await db.execute(
+            """
+            INSERT INTO editor_runs (run_timestamp, candidate_pool_size, selected_context_ids)
+            VALUES (?, ?, ?)
+            """,
+            [run_timestamp, 1000, json.dumps(selected_arxiv_ids)],
+        )
+        raw_run_id = run_result.get("last_insert_rowid")
+        try:
+            run_id = int(raw_run_id) if raw_run_id is not None else None
+        except (TypeError, ValueError):
+            run_id = None
+        logger.info(
+            "EditorAgent: recorded editor_run id=%s with %d context IDs",
+            run_id, len(selected_arxiv_ids),
+        )
+
         # Build a run-specific system prompt with a mandatory author spotlight
         top_author = self._find_top_author(llm_context)
         if top_author:
@@ -417,14 +440,15 @@ class EditorAgent:
                         (headline, article_body, points, cluster_count, paper_ids,
                          key_authors, strategic_implications, novelty_score,
                          strategic_outlook, references_json,
-                         executive_takeaways, twelve_month_outlook, sources_json)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         executive_takeaways, twelve_month_outlook, sources_json, run_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     [
                         headline, article_body, points, cluster_count, json.dumps(paper_ids),
                         json.dumps(key_authors), strategic_outlook, novelty_score,
                         strategic_outlook, json.dumps(resolved_refs),
                         executive_takeaways, twelve_month_outlook, json.dumps(resolved_sources),
+                        run_id,
                     ],
                 )
                 saved += 1
