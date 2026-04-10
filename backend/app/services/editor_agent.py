@@ -8,6 +8,7 @@ correctly-formed Markdown links after generation.
 """
 import json
 import logging
+import random
 import re
 from datetime import datetime, timezone, timedelta
 from typing import Any
@@ -20,7 +21,7 @@ from app.core.turso import db
 logger = logging.getLogger(__name__)
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-MODEL = "google/gemini-2.5-flash-lite"
+MODEL = "anthropic/claude-4.6-sonnet"
 
 SYSTEM_PROMPT = (
     "You are the Chief Strategy Officer and Lead Intelligence Analyst for a Tier-1 Tech Publication. "
@@ -46,7 +47,8 @@ SYSTEM_PROMPT = (
     "- HEADLINES: Must reflect the intersection of fields (e.g., 'The Biological Pivot in Silicon Architecture'). "
     "- EXECUTIVE TAKEAWAYS: 3 bullet points detailing the 'So What?' for the industry. "
     "- 12-MONTH OUTLOOK: A bold prediction based on the data. "
-    "- NARRATIVE: 300-500 words of sophisticated prose. "
+    "- NARRATIVE: A comprehensive 800-1000 word deep dive formatted with Markdown subheadings "
+    "(e.g. ## The Convergence Signal, ## Why This Matters Now, ## The Strategic Fault Line). "
 
     "ANTI-HALLUCINATION: Do NOT construct any URLs or Markdown links in any body field. "
     "In the sources array ONLY, use the tag string (e.g. 'P3', no brackets) to identify papers. "
@@ -56,9 +58,37 @@ SYSTEM_PROMPT = (
     "No markdown wrapper, no code fences. "
     "Each report object MUST have exactly these keys: "
     "headline (string, punchy trend hook — no paper titles, no author names, no brackets), "
-    "executive_takeaways (string, Markdown bullet list of exactly 3 points — no citations, no brackets), "
-    "twelve_month_outlook (string, 2-3 bold strategic sentences — no citations, no brackets), "
-    "narrative_body (string, 300-500 word Markdown deep-dive — no paper titles, no brackets, no links), "
+    "executive_takeaways (string, a Markdown bulleted list of exactly 3 points. "
+    "RUTHLESS CONSTRAINT: NO bolded prefixes, NO mini-headers. Do not use a colon to start a point. Just write the sentence. "
+    "Maximum 15 words per bullet. DO NOT mention Hacker News, GitHub, Hugging Face, or community engagement anywhere in this field. "
+    "Point 1: State the core technical capability. "
+    "Point 2: State the benchmark or efficiency improvement (e.g., speed, cost reduction, accuracy gain). "
+    "Point 3: State the legacy system or assumption this replaces.), "
+    "twelve_month_outlook (string, a bold prediction. "
+    "RUTHLESS CONSTRAINT: Maximum 2 sentences. Cut the fluff.), "
+    "narrative_body (string, a fast-paced, highly readable continuous report. "
+    "RUTHLESS CONSTRAINT: Maximum 350 to 400 words. "
+    "DO NOT use any subheadings or section titles — do not write headers like 'The Convergence Signal' or 'Why it matters'. "
+    "The text must flow continuously using only paragraph breaks. "
+    "Write in the gripping, aggressive style of the TLDR newsletter. "
+    "You may use inline bold text for emphasis, but NO standalone headers. "
+    "DO NOT include social validations or journalist POV in this body.), "
+    "social_validations (string, RUTHLESS CONSTRAINT: Exactly 1 sentence. Maximum 25 words. "
+    "DO NOT just list numbers or write 'This paper got X points.' "
+    "DO NOT use the words 'paper', 'cluster', or 'researchers'. "
+    "Write it like an elite market whisper — tell me WHO is reacting (e.g. 'the open-source underground', "
+    "'enterprise security teams', 'infrastructure builders') and the URGENCY of the reaction. "
+    "Base all figures strictly on the metrics in the context data — do NOT invent numbers. "
+    "Example of good output: 'The open-source underground is treating this architecture as an immediate threat, "
+    "driving a massive 800-point Hacker News spike overnight.'), "
+    "journalist_pov (string, a Markdown bulleted list of exactly 3 points. "
+    "RUTHLESS CONSTRAINT: NO bolded prefixes, NO mini-headers. Do not write 'The Catalyst:' or 'The Threat:' or 'The Edge:'. "
+    "Do not use a colon to start a point. Just write the sentence directly. "
+    "DO NOT summarize the article. This must be pure cynical market analysis and second-order effects. "
+    "Maximum 15 words per bullet. Write strictly in the present tense. "
+    "Point 1: The market catalyst — why this shifts the industry today. "
+    "Point 2: The threat — name the exact type of company, product, or incumbent that gets disrupted. "
+    "Point 3: The edge — how a builder or investor capitalizes on this right now.), "
     "novelty_score (float 1.0-10.0), "
     "sources (array of objects, each with: "
     "  tag (string e.g. 'P3', NO brackets — just the number and letter), "
@@ -98,7 +128,26 @@ class EditorAgent:
                     pass
         logger.info("EditorAgent: %d URLs already published", len(published_urls))
 
-        # 2. Fetch massive pool — top engagement across the last 60 days
+        # 2. Build blocklist from the last 10 editor runs so we never re-evaluate
+        #    papers the LLM already saw but chose not to publish.
+        run_rows = await db.fetchall(
+            "SELECT selected_context_ids FROM editor_runs ORDER BY id DESC LIMIT 10"
+        )
+        recently_evaluated_ids: set[str] = set()
+        for row in run_rows:
+            raw = row.get("selected_context_ids")
+            if raw:
+                try:
+                    for arxiv_id in json.loads(raw):
+                        if arxiv_id:
+                            recently_evaluated_ids.add(str(arxiv_id))
+                except Exception:
+                    pass
+        logger.info(
+            "EditorAgent: %d arXiv IDs blocked from recent runs", len(recently_evaluated_ids)
+        )
+
+        # 3. Fetch massive pool — top engagement across the last 60 days
         raw_rows = await db.fetchall(
             """
             SELECT
@@ -143,11 +192,13 @@ class EditorAgent:
             """,
         )
 
-        # 3. Diversity organizer — group unseen papers by primary subject
+        # 4. Diversity organizer — group unseen, un-evaluated papers by primary subject
         categorized_papers: dict[str, list[dict]] = {}
         for r in raw_rows:
             arxiv_id = r.get("arxiv_id", "")
             if f"https://arxiv.org/abs/{arxiv_id}" in published_urls:
+                continue
+            if arxiv_id in recently_evaluated_ids:
                 continue
             # Primary subject: prefer primary_category, fall back to ai_topic_category
             subject = (
@@ -162,7 +213,12 @@ class EditorAgent:
             len(categorized_papers), sum(len(v) for v in categorized_papers.values()),
         )
 
-        # 4. Round-robin dealer — one paper per category per round until 150
+        # 5. Shuffle within each category for serendipity — breaks deterministic
+        #    score ordering so each run draws different papers from the same pool.
+        for bucket in categorized_papers.values():
+            random.shuffle(bucket)
+
+        # 6. Round-robin dealer — one paper per category per round until 150
         fresh_rows: list[dict] = []
         while len(fresh_rows) < 150:
             added_this_round = False
@@ -245,7 +301,7 @@ class EditorAgent:
     # ── 2. LLM call ──────────────────────────────────────────────────────────
 
     async def _call_llm(self, context: list[dict], system_prompt: str = SYSTEM_PROMPT) -> list[dict]:
-        """Send masked context to Gemini 2.5 Flash Lite, return parsed articles."""
+        """Send masked context to Gemini 2.5 Pro, return parsed articles."""
         api_key = settings.OPENROUTER_API_KEY
         if not api_key:
             raise RuntimeError("OPENROUTER_API_KEY is not configured")
@@ -387,6 +443,8 @@ class EditorAgent:
             # new structured fields
             executive_takeaways = str(art.get("executive_takeaways", ""))
             twelve_month_outlook = str(art.get("twelve_month_outlook", ""))
+            social_validations = str(art.get("social_validations", ""))
+            journalist_pov = str(art.get("journalist_pov", ""))
 
             # strategic_outlook — fallback to twelve_month_outlook or legacy field
             strategic_outlook = (
@@ -440,15 +498,16 @@ class EditorAgent:
                         (headline, article_body, points, cluster_count, paper_ids,
                          key_authors, strategic_implications, novelty_score,
                          strategic_outlook, references_json,
-                         executive_takeaways, twelve_month_outlook, sources_json, run_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         executive_takeaways, twelve_month_outlook, sources_json,
+                         social_validations, journalist_pov, run_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     [
                         headline, article_body, points, cluster_count, json.dumps(paper_ids),
                         json.dumps(key_authors), strategic_outlook, novelty_score,
                         strategic_outlook, json.dumps(resolved_refs),
                         executive_takeaways, twelve_month_outlook, json.dumps(resolved_sources),
-                        run_id,
+                        social_validations, journalist_pov, run_id,
                     ],
                 )
                 saved += 1

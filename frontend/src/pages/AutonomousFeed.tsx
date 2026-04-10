@@ -12,6 +12,8 @@ interface Article {
   strategic_outlook: string
   references_json: string
   sources_json: string
+  social_validations?: string
+  journalist_pov?: string
   novelty_score: number
   created_at: string
 }
@@ -140,6 +142,12 @@ export default function AutonomousFeed() {
             const takeaways = article.executive_takeaways || ''
             const outlook = article.twelve_month_outlook || article.strategic_outlook || ''
             const body = article.narrative_body || article.article_body || ''
+            const socialValidations = article.social_validations || ''
+            const journalistPov = article.journalist_pov || ''
+            const paragraphs = body.split('\n\n').filter(p => p.trim() !== '')
+            const para1 = paragraphs.length > 0 ? paragraphs[0] : ''
+            const para2 = paragraphs.length > 1 ? paragraphs[1] : ''
+            const remainingParas = paragraphs.length > 2 ? paragraphs.slice(2).join('\n\n') : ''
 
             return (
               <div
@@ -174,7 +182,7 @@ export default function AutonomousFeed() {
                 {isExpanded && (
                   <div className="space-y-8">
 
-                    {/* Executive Takeaways */}
+                    {/* TOP BOX: Executive Takeaways */}
                     {takeaways && (
                       <section className="bg-surface border-l-[3px] border-l-accent px-6 py-5">
                         <h3 className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-accent mb-4">
@@ -186,9 +194,16 @@ export default function AutonomousFeed() {
                       </section>
                     )}
 
-                    {/* 12-Month Outlook */}
+                    {/* PARAGRAPH 1 */}
+                    {para1 && (
+                      <div className="text-[14px] leading-relaxed text-slate-400">
+                        <ReactMarkdown components={mdComponents}>{para1}</ReactMarkdown>
+                      </div>
+                    )}
+
+                    {/* FIRST CALLOUT: 12-Month Outlook */}
                     {outlook && (
-                      <section className="border-b border-white/8 pb-8">
+                      <section className="border-b border-white/8 pb-6">
                         <h3 className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-muted/50 mb-3">
                           12-Month Outlook
                         </h3>
@@ -198,16 +213,42 @@ export default function AutonomousFeed() {
                       </section>
                     )}
 
-                    {/* Deep-Dive */}
-                    {body && (
-                      <section>
-                        <h3 className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-muted/50 mb-6">
-                          Deep-Dive Analysis
+                    {/* PARAGRAPH 2 */}
+                    {para2 && (
+                      <div className="text-[14px] leading-relaxed text-slate-400">
+                        <ReactMarkdown components={mdComponents}>{para2}</ReactMarkdown>
+                      </div>
+                    )}
+
+                    {/* SECOND CALLOUT: Community Signal */}
+                    {socialValidations && (
+                      <div className="border-l-4 border-blue-500 bg-[#111111] p-6 pr-8">
+                        <h3 className="mb-4 text-xs font-bold tracking-widest text-blue-500 uppercase">
+                          The Community Signal
                         </h3>
-                        <div className="text-[14px] leading-relaxed text-slate-400">
-                          <ReactMarkdown components={mdComponents}>{body}</ReactMarkdown>
+                        <div className="text-gray-300 leading-relaxed text-sm md:text-base prose prose-invert">
+                          <ReactMarkdown components={mdComponents}>{socialValidations}</ReactMarkdown>
                         </div>
-                      </section>
+                      </div>
+                    )}
+
+                    {/* REMAINING PARAGRAPHS */}
+                    {remainingParas && (
+                      <div className="text-[14px] leading-relaxed text-slate-400">
+                        <ReactMarkdown components={mdComponents}>{remainingParas}</ReactMarkdown>
+                      </div>
+                    )}
+
+                    {/* BOTTOM BOX: The Alpha Decode */}
+                    {journalistPov && (
+                      <div className="my-12 border-l-4 border-emerald-500 bg-[#111111] p-6 pr-8">
+                        <h3 className="mb-4 text-xs font-bold tracking-widest text-emerald-500 uppercase">
+                          The Alpha Decode
+                        </h3>
+                        <div className="text-gray-300 leading-relaxed text-sm md:text-base prose prose-invert">
+                          <ReactMarkdown components={mdComponents}>{journalistPov}</ReactMarkdown>
+                        </div>
+                      </div>
                     )}
 
                     {/* Sources */}

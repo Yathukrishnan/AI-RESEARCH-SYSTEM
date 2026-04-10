@@ -34,6 +34,8 @@ async def get_editor_feed(page: int = Query(default=1, ge=1)):
                 executive_takeaways,
                 twelve_month_outlook,
                 sources_json,
+                social_validations,
+                journalist_pov,
                 novelty_score,
                 created_at
             FROM autonomous_articles
