@@ -126,6 +126,7 @@ export const adminApi = {
     api.post('/admin/paper-quality-check', { arxiv_url: arxivUrl }, { timeout: 120000 }),
   paperQualitySave: (paper: any, signals: any, scores: any) =>
     api.post('/admin/paper-quality-save', { paper, signals, scores }),
+  getEditorRuns: () => api.get('/admin/editor-runs'),
 }
 
 export const dashboardApi = {

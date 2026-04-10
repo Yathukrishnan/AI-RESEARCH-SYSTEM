@@ -6,7 +6,7 @@ import {
   Play, ArrowLeft, Database, TrendingUp, Brain, CheckCircle, Loader2,
   Activity, Users, Eye, Copy, Shield, ShieldOff, Wifi, WifiOff, Zap,
   Clock, BookOpen, Star, AlertTriangle, Download, Layers, Globe, Network,
-  Search, Github, MessageSquare, FlaskConical, ExternalLink
+  Search, Github, MessageSquare, FlaskConical, ExternalLink, ListTree, ChevronDown, ChevronRight
 } from 'lucide-react'
 import { adminApi } from '@/lib/api'
 import { AdminStats, ConfigItem, Keyword, Subject, AnalysisLog, AdminUser } from '@/lib/types'
@@ -29,6 +29,7 @@ function AdminSidebar() {
     { to: '/admin/config', label: 'Config', icon: Settings },
     { to: '/admin/apis', label: 'APIs', icon: Wifi },
     { to: '/admin/quality-check', label: 'Quality Check', icon: FlaskConical },
+    { to: '/admin/editor-runs', label: 'Editor Runs', icon: ListTree },
   ]
 
   return (
@@ -2675,6 +2676,144 @@ function PaperQualityCheck() {
   )
 }
 
+// ── Editor Runs ───────────────────────────────────────────────────────────────
+
+interface EditorRun {
+  id: number
+  run_timestamp: string
+  candidate_pool_size: number
+  selected_context_ids: string[]
+}
+
+function EditorRunsAdmin() {
+  const [runs, setRuns] = useState<EditorRun[]>([])
+  const [loading, setLoading] = useState(true)
+  const [expandedId, setExpandedId] = useState<number | null>(null)
+
+  useEffect(() => {
+    adminApi.getEditorRuns()
+      .then(r => setRuns(r.data?.runs ?? []))
+      .catch(() => toast.error('Failed to load editor runs'))
+      .finally(() => setLoading(false))
+  }, [])
+
+  const totalPapers = runs.reduce((sum, r) => sum + (r.selected_context_ids?.length ?? 0), 0)
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div>
+        <h1 className="text-xl font-bold text-white flex items-center gap-2">
+          <ListTree size={18} className="text-accent" />
+          Editor Runs
+        </h1>
+        <p className="text-sm text-muted mt-1">
+          Context traceability — the exact 150 arXiv IDs evaluated by the LLM each run
+        </p>
+      </div>
+
+      {/* Stats */}
+      {!loading && (
+        <div className="grid grid-cols-3 gap-3">
+          {[
+            { label: 'Total Runs', value: runs.length },
+            { label: 'Papers Evaluated', value: totalPapers.toLocaleString() },
+            { label: 'Avg Pool Size', value: runs.length ? Math.round(runs.reduce((s, r) => s + (r.candidate_pool_size ?? 0), 0) / runs.length).toLocaleString() : '—' },
+          ].map(({ label, value }) => (
+            <div key={label} className="bg-surface border border-accent/15 rounded-xl p-3 text-center">
+              <p className="text-xl font-bold text-white">{value}</p>
+              <p className="text-xs text-muted mt-0.5">{label}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Table */}
+      <div className="bg-surface border border-accent/15 rounded-2xl overflow-hidden">
+        <div className="px-5 py-3 border-b border-accent/10 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-white">Run History</h2>
+          <span className="text-xs text-muted">Last 50 runs</span>
+        </div>
+
+        {loading ? (
+          <div className="p-8 flex justify-center">
+            <Loader2 size={20} className="animate-spin text-muted" />
+          </div>
+        ) : runs.length === 0 ? (
+          <div className="p-8 text-center text-sm text-muted">No editor runs found.</div>
+        ) : (
+          <div className="divide-y divide-accent/5">
+            {runs.map(run => {
+              const isOpen = expandedId === run.id
+              const ids = run.selected_context_ids ?? []
+              return (
+                <div key={run.id}>
+                  {/* Row */}
+                  <div className="flex items-center gap-4 px-5 py-3 hover:bg-surface-2 transition-colors">
+                    {/* Run ID badge */}
+                    <span className="shrink-0 text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-accent/10 text-accent border border-accent/20">
+                      #{run.id}
+                    </span>
+
+                    {/* Timestamp + pool */}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-white font-medium">{toIST(run.run_timestamp)}</p>
+                      <p className="text-xs text-muted mt-0.5">
+                        Pool: <span className="text-slate-300">{(run.candidate_pool_size ?? 0).toLocaleString()}</span>
+                        <span className="mx-2 text-accent/30">·</span>
+                        Context: <span className="text-slate-300">{ids.length} papers</span>
+                      </p>
+                    </div>
+
+                    {/* Expand button */}
+                    <button
+                      onClick={() => setExpandedId(isOpen ? null : run.id)}
+                      className="shrink-0 flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 hover:bg-cyan-500/20 transition-all"
+                    >
+                      {isOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                      {isOpen ? 'Collapse' : 'View Papers'}
+                    </button>
+                  </div>
+
+                  {/* Expanded: scrollable arXiv ID list */}
+                  {isOpen && (
+                    <div className="px-5 pb-4 bg-surface-2 border-t border-accent/10">
+                      <p className="text-[10px] font-mono text-muted uppercase tracking-widest py-2.5">
+                        {ids.length} arXiv IDs evaluated — Run #{run.id}
+                      </p>
+                      <div className="h-64 overflow-y-auto rounded-xl border border-accent/10 bg-background p-3 space-y-1 scrollbar-thin">
+                        {ids.map((arxivId, idx) => (
+                          <div key={arxivId} className="flex items-center gap-3 text-[11px] font-mono group">
+                            <span className="text-accent/30 w-6 shrink-0 text-right">
+                              {String(idx + 1).padStart(2, '0')}
+                            </span>
+                            <a
+                              href={`https://arxiv.org/abs/${arxivId}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-slate-400 hover:text-cyan-400 hover:underline transition-colors truncate"
+                            >
+                              {arxivId}
+                            </a>
+                            <ExternalLink
+                              size={10}
+                              className="shrink-0 text-muted/0 group-hover:text-cyan-400/50 transition-colors"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Admin Layout ──────────────────────────────────────────────────────────────
 
 export function AdminPage() {
@@ -2707,6 +2846,7 @@ export function AdminPage() {
             <Route path="config" element={<ConfigAdmin />} />
             <Route path="apis" element={<ApisAdmin />} />
             <Route path="quality-check" element={<PaperQualityCheck />} />
+            <Route path="editor-runs" element={<EditorRunsAdmin />} />
           </Routes>
         </main>
       </div>

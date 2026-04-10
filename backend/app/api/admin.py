@@ -1261,3 +1261,29 @@ async def paper_quality_check(
             "has_code":       bool(gh.get("github_url")),
         },
     }
+
+
+@router.get("/editor-runs")
+async def get_editor_runs(
+    db: TursoClient = Depends(get_db),
+    _: dict = Depends(require_admin),
+):
+    """Return the last 50 editor runs with selected_context_ids parsed as a list."""
+    rows = await db.fetchall(
+        "SELECT id, run_timestamp, candidate_pool_size, selected_context_ids "
+        "FROM editor_runs ORDER BY id DESC LIMIT 50"
+    )
+    runs = []
+    for row in rows:
+        raw = row.get("selected_context_ids")
+        try:
+            context_ids = json.loads(raw) if raw else []
+        except Exception:
+            context_ids = []
+        runs.append({
+            "id": row.get("id"),
+            "run_timestamp": row.get("run_timestamp"),
+            "candidate_pool_size": row.get("candidate_pool_size"),
+            "selected_context_ids": context_ids,
+        })
+    return {"runs": runs}
