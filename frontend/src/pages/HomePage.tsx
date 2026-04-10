@@ -6,54 +6,47 @@ import { Dashboard } from '@/components/dashboard/Dashboard'
 import { FeedBanner } from '@/components/alerts/FeedBanner'
 import { DigestFeed } from '@/components/feed/DigestFeed'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Database, Eye, Flame, Loader2, CheckCircle, Search, X, ArrowRight } from 'lucide-react'
+import { Loader2, CheckCircle, Search, X, ArrowRight } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { feedApi } from '@/lib/api'
+import { RippleButton } from '@/components/ui/MagicUI'
+import { Ripple } from '@/components/ui/ripple'
+import { AnimatedGradientText } from '@/components/ui/animated-gradient-text'
+import { AnimatedGridPattern } from '@/components/ui/animated-grid-pattern'
+import { cn } from '@/lib/utils'
 
 const CATEGORIES = [
   {
     type: 'trending',
     emoji: '🔥',
-    label: 'Trending Papers',
+    label: 'Trending',
     hook: 'Top papers the field is reading right now',
-    reason: 'Ranked by citation velocity, HF upvotes, HN points & GitHub stars — the most-discussed papers across AI communities this week.',
-    border: 'border-orange-500/25',
-    bg: 'hover:bg-orange-500/8',
-    badgeBg: 'bg-orange-500/10',
     color: 'text-orange-400',
+    bar: 'bg-orange-500',
   },
   {
     type: 'gems',
     emoji: '💎',
     label: 'Hidden Gems',
     hook: 'High-signal papers most have missed',
-    reason: 'High quality score, not trending, under 50 views and under 10 HF upvotes — genuinely undiscovered papers with strong signal before the crowd finds them.',
-    border: 'border-purple-500/25',
-    bg: 'hover:bg-purple-500/8',
-    badgeBg: 'bg-purple-500/10',
     color: 'text-purple-400',
+    bar: 'bg-purple-500',
   },
   {
     type: 'new',
     emoji: '✨',
-    label: 'New Papers',
+    label: 'New',
     hook: 'Latest arXiv submissions, freshly ranked',
-    reason: 'Papers added to the feed in the last 7 days, scored by our AI pipeline — citation count, author h-index, topic relevance, and community signals.',
-    border: 'border-cyan-500/25',
-    bg: 'hover:bg-cyan-500/8',
-    badgeBg: 'bg-cyan-500/10',
-    color: 'text-cyan-400',
+    color: 'text-amber-400',
+    bar: 'bg-amber-500',
   },
   {
     type: 'rising',
     emoji: '📈',
     label: 'Rising Fast',
     hook: 'Papers accelerating in the rankings',
-    reason: 'Re-scored in the last 3 days with increasing momentum — these papers are gaining traction faster than their peers. Catch them before they peak.',
-    border: 'border-green-500/25',
-    bg: 'hover:bg-green-500/8',
-    badgeBg: 'bg-green-500/10',
     color: 'text-green-400',
+    bar: 'bg-green-500',
   },
 ]
 
@@ -61,28 +54,25 @@ function CategoryAlerts() {
   const navigate = useNavigate()
   return (
     <div>
-      <p className="text-[11px] font-bold text-muted uppercase tracking-widest mb-3">Explore by category</p>
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-        {CATEGORIES.map((cat) => (
-          <motion.button
+      <p className="text-[10px] font-mono font-bold text-muted/60 uppercase tracking-[0.15em] mb-3">
+        Explore by category
+      </p>
+      {/* Grid with hairline separators — editorial style */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-px bg-white/7 border border-white/7">
+        {CATEGORIES.map((cat, i) => (
+          <RippleButton
             key={cat.type}
-            whileHover={{ scale: 1.015 }}
-            whileTap={{ scale: 0.98 }}
+            rippleColor="rgba(232,160,32,0.15)"
             onClick={() => navigate(`/papers/${cat.type}`)}
-            className={`flex flex-col items-start gap-3 p-4 rounded-xl border bg-surface/50 ${cat.border} ${cat.bg} transition-colors cursor-pointer text-left group`}
+            className="flex items-center gap-4 px-5 py-4 bg-surface text-left group w-full"
           >
-            {/* Header */}
-            <div className="flex items-center justify-between w-full">
-              <span className={`flex items-center gap-1.5 text-xs font-bold px-2 py-1 rounded-full ${cat.badgeBg} ${cat.color}`}>
-                <span className="text-base leading-none">{cat.emoji}</span> {cat.label}
-              </span>
-              <ArrowRight size={13} className="text-muted group-hover:text-white transition-colors shrink-0" />
+            <span className="text-xl shrink-0 select-none">{cat.emoji}</span>
+            <div className="flex-1 min-w-0">
+              <p className={`text-sm font-bold ${cat.color} leading-none`}>{cat.label}</p>
+              <p className="text-[11px] text-muted/60 mt-1 line-clamp-1 leading-snug">{cat.hook}</p>
             </div>
-            {/* Hook */}
-            <p className="text-sm font-bold text-white leading-snug">{cat.hook}</p>
-            {/* Reason — why this category exists */}
-            <p className="text-[11px] text-slate-400 leading-relaxed">{cat.reason}</p>
-          </motion.button>
+            <ArrowRight size={12} className="text-muted/25 group-hover:text-muted/60 transition-colors shrink-0" />
+          </RippleButton>
         ))}
       </div>
     </div>
@@ -104,14 +94,11 @@ function getGreeting(): string {
   return 'Good evening'
 }
 
-function StatChip({ icon: Icon, value, label, color, border }: {
-  icon: React.ElementType; value: number; label: string; color: string; border: string
-}) {
+function StatChip({ value, label, color }: { value: number; label: string; color: string }) {
   return (
-    <div className={`flex items-center gap-2 bg-surface border ${border} rounded-xl px-3 py-2 text-xs`}>
-      <Icon size={13} className={color} />
-      <span className="text-white font-semibold tabular-nums">{value.toLocaleString()}</span>
-      <span className="text-muted">{label}</span>
+    <div className="flex items-center gap-2 border-r border-white/10 pr-4 last:border-0 last:pr-0">
+      <span className={`text-[15px] font-black font-mono tabular-nums ${color}`}>{value.toLocaleString()}</span>
+      <span className="text-[10px] font-mono text-muted/50 uppercase tracking-wider">{label}</span>
     </div>
   )
 }
@@ -138,9 +125,7 @@ export function HomePage() {
     } catch { /* silent */ }
   }
 
-  useEffect(() => {
-    fetchStats()
-  }, [])
+  useEffect(() => { fetchStats() }, [])
 
   useEffect(() => {
     if (!polling) return
@@ -148,7 +133,6 @@ export function HomePage() {
     return () => clearInterval(t)
   }, [polling])
 
-  // Search logic
   const runSearch = async (q: string, page = 0, append = false) => {
     if (q.length < 2) return
     setSearchLoading(true)
@@ -195,90 +179,118 @@ export function HomePage() {
   const isAnalyzing = stats && !stats.analysis_complete
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background relative">
+
+      {/* ── Magic UI: Animated Grid Pattern background ── */}
+      <AnimatedGridPattern
+        numSquares={40}
+        maxOpacity={0.22}
+        duration={3}
+        repeatDelay={0.5}
+        className={cn(
+          'absolute inset-0 z-0 h-full w-full',
+          'fill-amber-400/35 stroke-amber-400/20',
+        )}
+      />
+
+      {/* All page content sits above the grid */}
+      <div className="relative z-10">
       <Navbar />
 
-      {/* Hero section */}
-      <div className="relative overflow-hidden border-b border-accent/10">
-        <div className="absolute inset-0 pointer-events-none overflow-hidden">
-          <div className="absolute -top-12 left-1/4 w-96 h-64 bg-accent/5 rounded-full blur-3xl" />
-          <div className="absolute -top-8 right-1/3 w-72 h-48 bg-cyan-500/4 rounded-full blur-3xl" />
+      {/* Hero — editorial header block */}
+      <div className="border-b border-white/7 relative overflow-visible">
+        {/* Magic UI Ripple — concentric pulsing amber rings */}
+        <div className="absolute right-0 top-1/2 -translate-y-1/2 w-[500px] h-[500px] pointer-events-none hidden lg:block">
+          <Ripple mainCircleSize={90} mainCircleOpacity={0.35} numCircles={5} />
         </div>
+        <div className="max-w-7xl mx-auto px-4 py-7 space-y-5 relative">
 
-        <div className="relative max-w-7xl mx-auto px-4 py-8 space-y-5">
-          {/* Title + stats */}
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-5">
-            <motion.div initial={{ opacity: 0, x: -16 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.45 }}>
-              <p className="text-xs text-muted mb-1">{getGreeting()}, researcher</p>
-              <h1 className="text-2xl sm:text-3xl font-bold text-white leading-tight">
-                AI Research <span className="text-gradient">Intelligence</span>
+          {/* Title row */}
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-5">
+            <motion.div initial={{ opacity: 0, x: -12 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.4 }}>
+              <p className="text-[10px] font-mono text-muted/50 uppercase tracking-[0.15em] mb-2">{getGreeting()}, researcher</p>
+              <h1 className="text-[26px] sm:text-[30px] font-black text-white leading-tight tracking-tight">
+                AI Research{' '}
+                <AnimatedGradientText
+                  colorFrom="#f97316"
+                  colorTo="#fbbf24"
+                  speed={0.8}
+                  className="font-black text-[26px] sm:text-[30px] leading-tight"
+                >
+                  Intelligence
+                </AnimatedGradientText>
               </h1>
-              <p className="text-muted text-sm mt-1">Discover · Explore · Stay ahead of AI research</p>
+              <p className="text-[12px] font-mono text-muted/50 mt-1.5 uppercase tracking-widest">
+                Discover · Explore · Stay ahead
+              </p>
             </motion.div>
 
-            <motion.div
-              initial={{ opacity: 0, x: 16 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.45, delay: 0.1 }}
-              className="flex flex-wrap gap-2"
-            >
-              {stats?.total_papers ? (
-                <StatChip icon={Database} value={stats.total_papers} label="total" color="text-accent-2" border="border-accent/20" />
-              ) : null}
-              {stats?.visible_papers ? (
-                <StatChip icon={Eye} value={stats.visible_papers} label="visible" color="text-success" border="border-success/20" />
-              ) : null}
-              {stats?.trending_papers ? (
-                <StatChip icon={Flame} value={stats.trending_papers} label="trending" color="text-orange-400" border="border-orange-500/20" />
-              ) : null}
-            </motion.div>
+            {/* Stats — horizontal number strip */}
+            {stats && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.4, delay: 0.12 }}
+                className="flex items-center gap-4 shrink-0"
+              >
+                {stats.total_papers > 0 && (
+                  <StatChip value={stats.total_papers} label="total" color="text-white/80" />
+                )}
+                {stats.visible_papers > 0 && (
+                  <StatChip value={stats.visible_papers} label="visible" color="text-success" />
+                )}
+                {stats.trending_papers > 0 && (
+                  <StatChip value={stats.trending_papers} label="trending" color="text-orange-400" />
+                )}
+              </motion.div>
+            )}
           </div>
 
           {/* Search bar */}
-          <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.15 }}>
+          <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.12 }}>
             <div className="relative">
-              <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
+              <Search size={13} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted/50 pointer-events-none" />
               <input
                 type="text"
                 value={searchInput}
                 onChange={(e) => handleSearchChange(e.target.value)}
                 placeholder="Search by title, author, topic, category…"
-                className="w-full bg-surface border border-accent/20 rounded-xl py-2.5 pl-9 pr-10 text-sm text-white placeholder-muted focus:outline-none focus:border-accent/50 transition-all"
+                className="w-full bg-surface border border-white/10 rounded py-2.5 pl-9 pr-9 text-[13px] text-white placeholder-muted/35 focus:outline-none focus:border-accent/35 transition-colors"
               />
               {searchInput && (
-                <button onClick={clearSearch} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-white transition-colors">
-                  <X size={14} />
+                <button onClick={clearSearch} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted/40 hover:text-white transition-colors">
+                  <X size={13} />
                 </button>
               )}
             </div>
           </motion.div>
 
-          {/* Feed banner — daily hooks + category tiles */}
+          {/* Feed banner — rotating hook */}
           {!isSearching && (
-            <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.2 }}>
+            <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.18 }}>
               <FeedBanner />
             </motion.div>
           )}
         </div>
       </div>
 
-      {/* Analysis status banner */}
+      {/* Analysis status */}
       <AnimatePresence>
         {isAnalyzing && (
           <motion.div
-            initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
+            initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
             className="max-w-7xl mx-auto px-4 pt-4"
           >
-            <div className="flex items-center gap-3 bg-accent/10 border border-accent/25 rounded-xl px-4 py-3">
-              <Loader2 size={15} className="text-accent-2 animate-spin shrink-0" />
+            <div className="flex items-center gap-3 bg-accent/6 border border-accent/15 px-4 py-3">
+              <Loader2 size={14} className="text-accent animate-spin shrink-0" />
               <div className="flex-1">
-                <p className="text-sm text-white font-medium">
-                  Analysing {stats?.total_papers?.toLocaleString()} papers in background
+                <p className="text-[13px] text-white font-medium">
+                  Analysing {stats?.total_papers?.toLocaleString()} papers
                 </p>
-                <p className="text-xs text-muted">Scoring, ranking with AI · Auto-updates when complete</p>
+                <p className="text-[11px] font-mono text-muted/50 mt-0.5">Scoring with AI · Auto-updates when complete</p>
               </div>
-              <span className="text-xs text-accent-2 bg-accent/15 px-2 py-1 rounded-lg shrink-0 flex items-center gap-1">
-                <span className="w-1.5 h-1.5 bg-accent-2 rounded-full animate-pulse" /> Live
+              <span className="text-[11px] font-mono text-accent/70 flex items-center gap-1.5 shrink-0">
+                <span className="w-1.5 h-1.5 bg-accent rounded-full animate-pulse" /> Live
               </span>
             </div>
           </motion.div>
@@ -288,12 +300,12 @@ export function HomePage() {
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="max-w-7xl mx-auto px-4 pt-4"
           >
-            <div className="flex items-center gap-2 bg-success/5 border border-success/15 rounded-xl px-4 py-2">
-              <CheckCircle size={13} className="text-success shrink-0" />
-              <p className="text-xs text-slate-400">
-                <span className="text-white font-semibold">{stats.visible_papers.toLocaleString()}</span> papers ranked ·{' '}
-                <span className="text-orange-400 font-semibold">{stats.trending_papers}</span> trending ·{' '}
-                Week <span className="text-accent-2 font-semibold">{stats.current_week}</span>
+            <div className="flex items-center gap-2 border border-white/8 bg-surface px-4 py-2.5">
+              <CheckCircle size={12} className="text-success shrink-0" />
+              <p className="text-[11px] font-mono text-muted/60">
+                <span className="text-white font-bold">{stats.visible_papers.toLocaleString()}</span> ranked ·{' '}
+                <span className="text-orange-400 font-bold">{stats.trending_papers}</span> trending ·{' '}
+                Week <span className="text-accent font-bold">{stats.current_week}</span>
               </p>
             </div>
           </motion.div>
@@ -301,7 +313,7 @@ export function HomePage() {
       </AnimatePresence>
 
       {/* Main content */}
-      <main className="max-w-7xl mx-auto px-4 py-8 space-y-5">
+      <main className="max-w-7xl mx-auto px-4 py-8 space-y-8">
         {!isSearching && <CategoryAlerts />}
         {!isSearching && <ResumeReading />}
         {!isSearching && <DigestFeed />}
@@ -309,30 +321,30 @@ export function HomePage() {
         {isSearching ? (
           /* ── Search results ── */
           <div className="space-y-6">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between pb-3 border-b border-white/7">
               {searchLoading && searchResults.length === 0 ? (
-                <p className="text-sm text-muted flex items-center gap-2">
-                  <Loader2 size={13} className="animate-spin" /> Searching…
+                <p className="text-[12px] font-mono text-muted/50 flex items-center gap-2">
+                  <Loader2 size={12} className="animate-spin" /> Searching…
                 </p>
               ) : (
-                <p className="text-sm text-muted">
-                  <span className="text-white font-semibold">{searchTotal.toLocaleString()}</span> results for{' '}
-                  <span className="text-accent-2 font-semibold">"{searchQuery}"</span>
+                <p className="text-[12px] font-mono text-muted/60">
+                  <span className="text-white font-bold">{searchTotal.toLocaleString()}</span> results for{' '}
+                  <span className="text-accent font-bold">"{searchQuery}"</span>
                 </p>
               )}
-              <button onClick={clearSearch} className="text-xs text-muted hover:text-white flex items-center gap-1 transition-colors">
-                <X size={12} /> Clear
+              <button onClick={clearSearch} className="text-[11px] font-mono text-muted/40 hover:text-white flex items-center gap-1 transition-colors">
+                <X size={11} /> Clear
               </button>
             </div>
 
             {searchResults.length === 0 && !searchLoading ? (
               <div className="flex flex-col items-center justify-center py-24 text-center">
-                <Search size={40} className="text-muted mb-4 opacity-30" />
-                <p className="text-white font-semibold mb-1">No results found</p>
-                <p className="text-muted text-sm">Try a different title, author name, or topic tag</p>
+                <Search size={36} className="text-muted/20 mb-4" />
+                <p className="text-white font-bold mb-1">No results found</p>
+                <p className="text-[12px] font-mono text-muted/50">Try a different title, author name, or topic tag</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-px bg-white/6">
                 {searchResults.map((paper, i) => (
                   <PaperCard key={paper.id} paper={paper} index={i} />
                 ))}
@@ -343,7 +355,7 @@ export function HomePage() {
               <div className="flex justify-center">
                 <button
                   onClick={loadMoreSearch}
-                  className="px-6 py-2.5 bg-surface border border-accent/20 text-sm text-muted hover:text-white hover:border-accent/40 rounded-xl transition-all"
+                  className="px-6 py-2.5 bg-surface border border-white/10 text-[12px] font-mono text-muted/60 hover:text-white hover:border-white/20 transition-all"
                 >
                   Load more results
                 </button>
@@ -351,7 +363,7 @@ export function HomePage() {
             )}
             {searchLoading && searchResults.length > 0 && (
               <div className="flex justify-center">
-                <Loader2 size={18} className="animate-spin text-muted" />
+                <Loader2 size={16} className="animate-spin text-muted/40" />
               </div>
             )}
           </div>
@@ -360,6 +372,7 @@ export function HomePage() {
           <Dashboard />
         )}
       </main>
+      </div>{/* end z-10 wrapper */}
     </div>
   )
 }

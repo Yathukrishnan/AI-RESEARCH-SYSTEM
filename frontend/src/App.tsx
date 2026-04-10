@@ -18,6 +18,7 @@ function RequireAdmin({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   return (
+    <>
     <Routes>
       {/* Public landing — non-technical users enter here */}
       <Route path="/" element={<LandingPage />} />
@@ -50,5 +51,6 @@ export default function App() {
         }
       />
     </Routes>
+    </>
   )
 }

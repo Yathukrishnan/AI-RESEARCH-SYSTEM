@@ -4,30 +4,38 @@ export default {
   theme: {
     extend: {
       colors: {
-        background: '#000319',
-        surface: '#050d2e',
-        'surface-2': '#0a1545',
-        'surface-3': '#0f1e5c',
-        accent: '#6366f1',
-        'accent-2': '#818cf8',
-        highlight: '#22d3ee',
-        success: '#10b981',
+        background: '#0a0a0a',
+        surface: '#131313',
+        'surface-2': '#1c1c1c',
+        'surface-3': '#242424',
+        accent: '#e8a020',
+        'accent-2': '#fbbf24',
+        highlight: '#fbbf24',
+        foreground: '#e8a020',
+        success: '#22c55e',
         warning: '#f59e0b',
         danger: '#ef4444',
-        muted: '#64748b',
+        muted: '#6b7280',
       },
       backgroundImage: {
-        'card-gradient': 'linear-gradient(135deg, rgba(99,102,241,0.05) 0%, rgba(14,165,233,0.05) 100%)',
+        'card-gradient': 'linear-gradient(135deg, rgba(232,160,32,0.04) 0%, rgba(251,191,36,0.02) 100%)',
       },
       boxShadow: {
-        'glow': '0 0 20px rgba(99, 102, 241, 0.4)',
-        'card': '0 4px 24px rgba(0, 0, 0, 0.4)',
-        'card-hover': '0 8px 40px rgba(99, 102, 241, 0.25)',
+        'glow': '0 0 20px rgba(232, 160, 32, 0.3)',
+        'card': '0 4px 24px rgba(0, 0, 0, 0.5)',
+        'card-hover': '0 4px 12px rgba(232, 160, 32, 0.12)',
+      },
+      fontFamily: {
+        mono: ['JetBrains Mono', 'Fira Code', 'Cascadia Code', 'monospace'],
       },
       animation: {
-        'shimmer': 'shimmer 2s linear infinite',
-        'slide-up': 'slideUp 0.4s ease-out',
-        'fade-in': 'fadeIn 0.5s ease-out',
+        'shimmer':       'shimmer 2s linear infinite',
+        'slide-up':      'slideUp 0.4s ease-out',
+        'fade-in':       'fadeIn 0.5s ease-out',
+        'ripple':        'ripple var(--duration, 2s) ease calc(var(--i, 0) * 0.2s) infinite',
+        'click-ripple':  'click-ripple 0.65s linear forwards',
+        'gradient':      'gradient-shift 8s ease infinite',
+        'grid':          'grid 15s linear infinite',
       },
       keyframes: {
         shimmer: {
@@ -41,6 +49,23 @@ export default {
         fadeIn: {
           '0%': { opacity: '0' },
           '100%': { opacity: '1' },
+        },
+        ripple: {
+          '0%, 100%': { transform: 'translate(-50%, -50%) scale(1)' },
+          '50%':       { transform: 'translate(-50%, -50%) scale(0.9)' },
+        },
+        'click-ripple': {
+          '0%':   { transform: 'scale(0)', opacity: '1' },
+          '100%': { transform: 'scale(1)', opacity: '0' },
+        },
+        'gradient-shift': {
+          '0%':   { backgroundPosition: '0% 50%' },
+          '50%':  { backgroundPosition: '100% 50%' },
+          '100%': { backgroundPosition: '0% 50%' },
+        },
+        grid: {
+          '0%':   { transform: 'translateY(-50%)' },
+          '100%': { transform: 'translateY(0)' },
         },
       },
     },

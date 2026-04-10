@@ -36,53 +36,62 @@ export function Navbar() {
   }
 
   return (
-    <header className="sticky top-0 z-50 glass border-b border-accent/10">
-      <div className="max-w-7xl mx-auto px-4 h-16 flex items-center gap-4">
-        {/* Logo */}
-        <Link to="/" className="flex items-center gap-2 shrink-0" onClick={clearSearch}>
-          <div className="w-8 h-8 rounded-lg bg-accent/20 border border-accent/40 flex items-center justify-center">
-            <Cpu size={18} className="text-accent-2" />
+    <header className="sticky top-0 z-50 bg-background border-b border-white/7">
+      <div className="max-w-7xl mx-auto px-4 h-13 flex items-center gap-5" style={{ height: '52px' }}>
+
+        {/* Wordmark logo */}
+        <Link to="/" className="shrink-0 flex items-center gap-2.5 group" onClick={clearSearch}>
+          <div className="w-7 h-7 bg-accent/15 border border-accent/30 flex items-center justify-center">
+            <Cpu size={14} className="text-accent" />
           </div>
-          <span className="font-bold text-white hidden sm:block">
-            AI<span className="text-gradient">Research</span>
-          </span>
+          <div className="hidden sm:flex flex-col leading-none gap-0.5">
+            <span className="text-[12px] font-black text-white tracking-tight uppercase leading-none">
+              AI<span className="text-accent">·</span>Research
+            </span>
+            <span className="text-[9px] font-mono text-muted uppercase tracking-[0.12em] leading-none">
+              Intelligence System
+            </span>
+          </div>
         </Link>
 
-        {/* Search */}
-        <form onSubmit={handleSearch} className="flex-1 max-w-lg relative">
+        {/* Vertical divider */}
+        <div className="hidden sm:block w-px h-5 bg-white/10 shrink-0" />
+
+        {/* Search bar */}
+        <form onSubmit={handleSearch} className="flex-1 max-w-md relative">
           <div className="relative">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted/60 pointer-events-none" />
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search papers, topics, authors..."
-              className="w-full bg-surface-2 border border-accent/20 rounded-xl py-2 pl-9 pr-10 text-sm text-white placeholder-muted focus:outline-none focus:border-accent/50 focus:shadow-glow transition-all"
+              placeholder="Search papers, topics, authors…"
+              className="w-full bg-surface border border-white/10 rounded py-1.5 pl-8 pr-8 text-[13px] text-white placeholder-muted/40 focus:outline-none focus:border-accent/35 transition-colors"
             />
             {query && (
-              <button type="button" onClick={clearSearch} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-white">
-                <X size={14} />
+              <button type="button" onClick={clearSearch} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted/50 hover:text-white transition-colors">
+                <X size={12} />
               </button>
             )}
           </div>
 
-          {/* Search dropdown */}
+          {/* Search results dropdown */}
           <AnimatePresence>
             {results.length > 0 && (
               <motion.div
-                initial={{ opacity: 0, y: -8 }}
+                initial={{ opacity: 0, y: -6 }}
                 animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -8 }}
-                className="absolute top-full mt-2 w-full bg-surface border border-accent/20 rounded-xl shadow-card overflow-hidden z-50"
+                exit={{ opacity: 0, y: -6 }}
+                className="absolute top-full mt-1.5 w-full bg-surface border border-white/12 shadow-card overflow-hidden z-50"
               >
                 {results.slice(0, 6).map((p) => (
                   <Link
                     key={p.id}
                     to={`/report/${p.id}`}
                     onClick={clearSearch}
-                    className="block px-4 py-3 hover:bg-surface-2 border-b border-accent/10 last:border-0"
+                    className="block px-4 py-3 hover:bg-surface-2 border-b border-white/6 last:border-0 transition-colors"
                   >
-                    <p className="text-sm text-white font-medium line-clamp-1">{p.hook_text || p.title}</p>
-                    <p className="text-xs text-muted mt-0.5">{p.primary_category} · {p.authors[0]?.name}</p>
+                    <p className="text-[13px] text-white font-medium line-clamp-1">{p.hook_text || p.title}</p>
+                    <p className="text-[11px] text-muted font-mono mt-0.5">{p.primary_category} · {p.authors[0]?.name}</p>
                   </Link>
                 ))}
               </motion.div>
@@ -90,13 +99,12 @@ export function Navbar() {
           </AnimatePresence>
         </form>
 
-        {/* Right actions */}
-        <div className="flex items-center gap-2 ml-auto">
-          {/* Dashboard link — for power users navigating from landing */}
+        {/* Desktop nav links */}
+        <nav className="hidden sm:flex items-center ml-auto shrink-0">
           {location.pathname === '/' && (
             <Link
               to="/dashboard"
-              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-surface border border-accent/20 rounded-lg text-xs text-muted hover:text-white hover:border-accent/40 transition-all"
+              className="text-[12px] text-muted/70 hover:text-white px-3 py-1.5 transition-colors"
             >
               Researcher View
             </Link>
@@ -104,45 +112,79 @@ export function Navbar() {
           {location.pathname === '/dashboard' && (
             <Link
               to="/"
-              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-surface border border-accent/20 rounded-lg text-xs text-muted hover:text-white hover:border-accent/40 transition-all"
+              className="text-[12px] text-muted/70 hover:text-white px-3 py-1.5 transition-colors"
             >
-              Explore →
+              Explore
             </Link>
           )}
-          {/* Live Feed — always visible shortcut to HN-style editor digest */}
           <Link
             to="/editor-feed"
-            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-surface border border-[#ff6600]/30 rounded-lg text-xs text-[#ff6600]/70 hover:text-[#ff6600] hover:border-[#ff6600]/60 transition-all"
+            className="text-[12px] text-[#ff6600]/60 hover:text-[#ff6600] px-3 py-1.5 transition-colors font-mono"
           >
-            Live Feed
+            Live
           </Link>
           {isAuthenticated && role === 'admin' && (
             <Link
               to="/admin"
-              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-accent/10 border border-accent/30 rounded-lg text-xs text-accent-2 hover:bg-accent/20 transition-all"
+              className="text-[12px] text-accent/70 hover:text-accent flex items-center gap-1 px-3 py-1.5 transition-colors"
             >
-              <Shield size={13} />
+              <Shield size={11} />
               Admin
             </Link>
           )}
+          <div className="w-px h-4 bg-white/10 mx-1" />
           {isAuthenticated ? (
             <button
               onClick={() => { clearAuth(); navigate('/') }}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-danger/10 border border-danger/30 rounded-lg text-xs text-danger hover:bg-danger/20 transition-all"
+              className="text-[12px] text-muted/60 hover:text-danger flex items-center gap-1.5 px-3 py-1.5 transition-colors"
             >
-              <LogOut size={13} />
-              <span className="hidden sm:block">Logout</span>
+              <LogOut size={11} />
+              <span>Logout</span>
             </button>
           ) : (
             <Link
               to="/login"
-              className="px-3 py-1.5 bg-accent text-white rounded-lg text-xs font-medium hover:bg-accent/80 transition-all"
+              className="text-[12px] bg-accent text-black font-bold px-3 py-1.5 hover:bg-accent-2 transition-colors tracking-wide"
             >
               Login
             </Link>
           )}
-        </div>
+        </nav>
+
+        {/* Mobile hamburger */}
+        <button
+          onClick={() => setShowMenu((m) => !m)}
+          className="sm:hidden ml-auto text-muted/70 hover:text-white transition-colors"
+        >
+          {showMenu ? <X size={18} /> : <Menu size={18} />}
+        </button>
       </div>
+
+      {/* Mobile menu */}
+      <AnimatePresence>
+        {showMenu && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="sm:hidden overflow-hidden border-t border-white/7 bg-surface"
+          >
+            <div className="px-4 py-3 flex flex-col gap-1">
+              <Link to="/" onClick={() => setShowMenu(false)} className="text-sm text-muted hover:text-white py-2 transition-colors">Home</Link>
+              <Link to="/dashboard" onClick={() => setShowMenu(false)} className="text-sm text-muted hover:text-white py-2 transition-colors">Researcher View</Link>
+              <Link to="/editor-feed" onClick={() => setShowMenu(false)} className="text-sm text-[#ff6600]/70 hover:text-[#ff6600] py-2 transition-colors font-mono">Live Feed</Link>
+              {isAuthenticated && role === 'admin' && (
+                <Link to="/admin" onClick={() => setShowMenu(false)} className="text-sm text-accent/70 hover:text-accent py-2 transition-colors">Admin</Link>
+              )}
+              {isAuthenticated ? (
+                <button onClick={() => { clearAuth(); navigate('/'); setShowMenu(false) }} className="text-sm text-danger/70 hover:text-danger text-left py-2 transition-colors">Logout</button>
+              ) : (
+                <Link to="/login" onClick={() => setShowMenu(false)} className="text-sm font-bold text-accent py-2 transition-colors">Login</Link>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </header>
   )
 }
